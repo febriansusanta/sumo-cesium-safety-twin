@@ -1,0 +1,16 @@
+[
+  {
+    "disclaimer": "Synthetic and uncalibrated; not for operational decisions.",
+    "file": "baseline.zip",
+    "id": "baseline",
+    "sha256": "d483a6c2d2b2a183c48865b04a3c529d1a4786f465a3357facbddef66c60052d",
+    "title": "Baseline demo"
+  },
+  {
+    "disclaimer": "Synthetic and uncalibrated; not for operational decisions.",
+    "file": "lead-emergency-braking.zip",
+    "id": "lead-emergency-braking",
+    "sha256": "710a66aaa0f6f0a30cd325ded2423d561fe445dc896af226609d7d058c77a783",
+    "title": "Lead emergency-braking demo"
+  }
+]

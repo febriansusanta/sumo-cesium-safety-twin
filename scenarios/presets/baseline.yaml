@@ -1,0 +1,6 @@
+description: Ordinary synthetic random demand with no forced intervention.
+limitations:
+  - Synthetic and uncalibrated; not observed traffic demand.
+scenario:
+  name: Baseline
+  presetId: baseline

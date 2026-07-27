@@ -1,0 +1,16 @@
+project:
+  name: SUMO–Cesium Traffic-Safety Digital Twin
+  version: 0.1.0
+  disclaimer: Synthetic and uncalibrated demonstrator; not suitable for operational road-safety decisions.
+location:
+  name: ncku-daxue-shengli
+  bbox:
+    west: 120.2168
+    south: 22.9954
+    east: 120.2200
+    north: 22.9970
+limits:
+  max_bbox_area_km2: 2.0
+  max_bbox_span_degrees: 0.02
+  max_download_bytes: 26214400
+osm_url: https://api.openstreetmap.org/api/0.6/map

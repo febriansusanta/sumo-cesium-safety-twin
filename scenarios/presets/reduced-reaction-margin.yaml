@@ -1,0 +1,8 @@
+description: Reduces the desired following time gap while keeping demand and other vehicle parameters controlled.
+limitations:
+  - Tau is a behavioural assumption and is not calibrated to observed drivers.
+scenario:
+  name: Reduced reaction margin
+  presetId: reduced-reaction-margin
+  vehicle:
+    tau: 0.7

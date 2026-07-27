@@ -1,0 +1,11 @@
+description: A deterministic lead/follower pair receives a one-second emergency-deceleration command after a validated preparation pass.
+limitations:
+  - The intervention and response are simulated, not observations of real drivers.
+  - SUMO safety checks remain enabled, so measured acceleration may differ from the command.
+scenario:
+  name: Lead-vehicle emergency braking
+  presetId: lead-emergency-braking
+  intervention:
+    enabled: true
+    triggerTime: 20
+    duration: 1

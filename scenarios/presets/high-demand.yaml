@@ -1,0 +1,9 @@
+description: Doubles the synthetic departure rate while retaining baseline vehicle behaviour.
+limitations:
+  - High is a demonstrative label, not a calibrated traffic condition.
+scenario:
+  name: High demand
+  presetId: high-demand
+  demand:
+    level: high
+    period: 1

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="sumo-cesium-test-fixture">
+  <node id="1" lat="22.9962" lon="120.2170" />
+  <node id="2" lat="22.9962" lon="120.2180" />
+  <node id="3" lat="22.9962" lon="120.2190" />
+  <node id="4" lat="22.9957" lon="120.2180" />
+  <node id="5" lat="22.9967" lon="120.2180" />
+  <way id="10">
+    <nd ref="1"/><nd ref="2"/><nd ref="3"/>
+    <tag k="highway" v="residential"/><tag k="name" v="Fixture East-West"/>
+  </way>
+  <way id="11">
+    <nd ref="4"/><nd ref="2"/><nd ref="5"/>
+    <tag k="highway" v="residential"/><tag k="name" v="Fixture North-South"/>
+  </way>
+</osm>
