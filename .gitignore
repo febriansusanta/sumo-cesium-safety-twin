@@ -16,3 +16,4 @@ data/cache/*
 data/environment.json
 !data/**/.gitkeep
 *.log
+outputs/
