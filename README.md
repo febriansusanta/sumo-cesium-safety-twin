@@ -15,6 +15,7 @@ map tokens.
 For a practical map of the codebase, see [Code structure guide](docs/code-structure.md).
 For a plain-language explanation of the updated dashboard data, see
 [Dashboard data guide](DASHBOARD_DATA_GUIDE.md).
+For saved external map references, see [Reference links](docs/reference-links.md).
 
 ## Supported systems and prerequisites
 
