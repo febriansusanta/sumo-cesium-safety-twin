@@ -14,6 +14,7 @@ import {
   fetchTrajectories,
   fetchSummary,
   fetchLocalDatasets,
+  fetchPointOverlays,
   createRun,
   importLocalDataset,
   validateScenario,
@@ -25,6 +26,7 @@ import { renderVehicleChart } from "./charts/vehicle-chart";
 import { renderBuildings } from "./cesium/buildings";
 import { EVENT_COLORS, humanizeEventType, renderSafetyEvents } from "./cesium/events";
 import { renderNetwork } from "./cesium/network";
+import { renderPointOverlays } from "./cesium/point-overlays";
 import { highlightVehicle, renderVehicles } from "./cesium/vehicles";
 import { BASEMAPS, DEFAULT_BASEMAP_ID, createViewer, setBasemap } from "./cesium/viewer";
 import { PlaybackStore } from "./simulation/playback-store";
@@ -74,6 +76,7 @@ root.innerHTML = `
       <dl>
         <div><dt>Location</dt><dd id="location-status">NCKU / Daxue / Shengli</dd></div>
         <div><dt>Network</dt><dd id="network-status">Loading…</dd></div>
+        <div><dt>Point overlays</dt><dd id="point-status">Loading…</dd></div>
         <div><dt>Playback</dt><dd>Offline completed runs</dd></div>
         <div><dt>Run</dt><dd id="run-status">Looking for completed runs…</dd></div>
         <div><dt>Vehicles</dt><dd id="vehicle-count">—</dd></div>
@@ -100,6 +103,8 @@ root.innerHTML = `
           <label class="toggle"><input type="checkbox" id="layer-events" checked /> Safety events</label>
           <label class="toggle"><input type="checkbox" id="layer-network" checked /> Road network</label>
           <label class="toggle"><input type="checkbox" id="layer-buildings" checked /> 3D buildings</label>
+          <label class="toggle"><input type="checkbox" id="layer-real-points" checked /> Real points</label>
+          <label class="toggle"><input type="checkbox" id="layer-sumo-points" checked /> SUMO points</label>
         </fieldset>
         <div class="basemap-picker">
           <label for="basemap">Basemap</label>
@@ -112,6 +117,8 @@ root.innerHTML = `
         <span class="lg lg-critical">Critical event</span>
         <span class="lg lg-network">Road network</span>
         <span class="lg lg-building">3D buildings</span>
+        <span class="lg lg-real-point">Real point</span>
+        <span class="lg lg-sumo-point">SUMO point</span>
       </div>
       <section class="playback" aria-label="Playback controls">
         <button id="restart" type="button" aria-label="Restart playback">↺</button>
@@ -155,9 +162,18 @@ if (basemapSelect) {
   basemapSelect.addEventListener("change", () => setBasemap(viewer, basemapSelect.value));
 }
 
-const layerVisibility = { vehicles: true, events: true, network: true, buildings: true };
+const layerVisibility = {
+  vehicles: true,
+  events: true,
+  network: true,
+  buildings: true,
+  realPoints: true,
+  sumoPoints: true,
+};
 let networkDataSource: Cesium.GeoJsonDataSource | undefined;
 let buildingDataSource: Cesium.GeoJsonDataSource | undefined;
+let realPointEntities: Cesium.Entity[] = [];
+let sumoPointEntities: Cesium.Entity[] = [];
 
 function applyLayerVisibility(): void {
   // Event markers gate their own `show` via a playback-driven callback that also
@@ -165,6 +181,8 @@ function applyLayerVisibility(): void {
   for (const entity of vehicleEntities.values()) entity.show = layerVisibility.vehicles;
   if (networkDataSource) networkDataSource.show = layerVisibility.network;
   if (buildingDataSource) buildingDataSource.show = layerVisibility.buildings;
+  for (const entity of realPointEntities) entity.show = layerVisibility.realPoints;
+  for (const entity of sumoPointEntities) entity.show = layerVisibility.sumoPoints;
 }
 
 function bindLayerToggle(id: string, key: keyof typeof layerVisibility): void {
@@ -178,6 +196,8 @@ bindLayerToggle("layer-vehicles", "vehicles");
 bindLayerToggle("layer-events", "events");
 bindLayerToggle("layer-network", "network");
 bindLayerToggle("layer-buildings", "buildings");
+bindLayerToggle("layer-real-points", "realPoints");
+bindLayerToggle("layer-sumo-points", "sumoPoints");
 
 const playButton = document.querySelector<HTMLButtonElement>("#play");
 const restartButton = document.querySelector<HTMLButtonElement>("#restart");
@@ -253,6 +273,23 @@ void fetchBuildings()
   })
   .catch((error: unknown) => {
     console.warn(error instanceof Error ? error.message : "Building layer unavailable");
+  });
+
+const pointStatus = document.querySelector<HTMLElement>("#point-status");
+void fetchPointOverlays()
+  .then((overlays) => {
+    const entities = renderPointOverlays(viewer, overlays);
+    realPointEntities = entities.real;
+    sumoPointEntities = entities.sumo;
+    applyLayerVisibility();
+    if (pointStatus) {
+      pointStatus.textContent = `${entities.real.length} real, ${entities.sumo.length} SUMO`;
+    }
+  })
+  .catch((error: unknown) => {
+    if (pointStatus) {
+      pointStatus.textContent = error instanceof Error ? error.message : "No point overlay data";
+    }
   });
 
 const defaultLocationLabel = "NCKU / Daxue / Shengli";

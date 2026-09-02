@@ -116,6 +116,11 @@ same compact JSON format as generated runs, and local SUMO coordinates are trans
 WGS84 using the network projection metadata. The importer records source checksums and
 relative paths in each run directory without embedding machine-specific absolute paths.
 
+The separate `../Data/sumo` folder can provide point shapefile overlays. The dashboard reads
+`real_point.shp` as observed point data and `sumo_point.shp` as SUMO-derived safety point
+data through `/api/point-overlays`; these points are visual comparison context and do not
+replace FCD trajectory playback.
+
 ## Phase 0 verification
 
 Verified on the Windows environment documented above:

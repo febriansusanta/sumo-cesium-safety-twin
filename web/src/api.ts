@@ -15,9 +15,11 @@ const geoJsonFeatureCollectionSchema = z.object({
 
 const networkSchema = geoJsonFeatureCollectionSchema;
 const buildingSchema = geoJsonFeatureCollectionSchema;
+const pointOverlaySchema = geoJsonFeatureCollectionSchema;
 
 export type NetworkGeoJson = z.infer<typeof networkSchema>;
 export type BuildingGeoJson = z.infer<typeof buildingSchema>;
+export type PointOverlayGeoJson = z.infer<typeof pointOverlaySchema>;
 
 const runSchema = z.object({
   runId: z.string(),
@@ -156,6 +158,14 @@ export async function fetchBuildings(fetcher: typeof fetch = fetch): Promise<Bui
   const response = await fetcher("/api/buildings");
   if (!response.ok) throw new Error(`Building request failed (${response.status})`);
   return buildingSchema.parse(await response.json());
+}
+
+export async function fetchPointOverlays(
+  fetcher: typeof fetch = fetch,
+): Promise<PointOverlayGeoJson> {
+  const response = await fetcher("/api/point-overlays");
+  if (!response.ok) throw new Error(`Point-overlay request failed (${response.status})`);
+  return pointOverlaySchema.parse(await response.json());
 }
 
 export async function fetchRuns(fetcher: typeof fetch = fetch): Promise<Run[]> {

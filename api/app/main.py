@@ -23,6 +23,7 @@ from .services.local_data_service import (
     import_local_dataset,
 )
 from .services.network_service import latest_geojson, latest_network
+from .services.point_overlay_service import PointOverlayError, load_point_overlays
 from .services.preset_service import load_presets
 
 
@@ -101,6 +102,14 @@ def buildings() -> dict[str, object]:
     try:
         return load_or_create_buildings(get_settings())
     except BuildingLayerError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get("/api/point-overlays", tags=["network"])
+def point_overlays() -> dict[str, object]:
+    try:
+        return load_point_overlays(get_settings())
+    except PointOverlayError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 

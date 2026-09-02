@@ -54,6 +54,7 @@ The backend is a FastAPI app in `api/app/`.
 | `osm_service.py` | Downloads and caches OSM XML for a small configured bounding box. |
 | `network_service.py` | Runs `netconvert`, validates SUMO networks and exports network GeoJSON for Cesium. |
 | `building_service.py` | Serves 3D building GeoJSON from OSM footprints when available, or deterministic visual context blocks around the active network. |
+| `point_overlay_service.py` | Reads local WGS84 point shapefiles from `Data/sumo` and serves real/SUMO comparison points as GeoJSON. |
 | `demand_service.py` | Runs `randomTrips.py` and routing tools to create synthetic vehicle demand. |
 | `simulation_service.py` | Runs SUMO through `libsumo`, writes FCD, tripinfo, collision and SSM outputs, then creates summary JSON. |
 | `coordinate_service.py` | Reads SUMO network projection metadata and converts between SUMO coordinates and WGS84 longitude/latitude. |
@@ -75,6 +76,7 @@ The frontend is a framework-free TypeScript app in `web/src/`.
 | `web/src/cesium/viewer.ts` | Creates the Cesium viewer and basemap options. |
 | `web/src/cesium/network.ts` | Renders road/lane GeoJSON into Cesium. |
 | `web/src/cesium/buildings.ts` | Renders building GeoJSON as extruded Cesium polygons. |
+| `web/src/cesium/point-overlays.ts` | Renders observed and SUMO-derived point shapefile overlays as Cesium markers. |
 | `web/src/cesium/vehicles.ts` | Creates and updates vehicle entities from trajectory samples. |
 | `web/src/cesium/events.ts` | Renders TTC, braking and collision markers. |
 | `web/src/simulation/playback-store.ts` | Shared playback clock used by map, charts and controls. |
@@ -145,6 +147,7 @@ Typical files inside a run directory:
 | `GET /api/environment` | Read detected local tool versions and simulation mode. |
 | `GET /api/network` | Load the prepared network GeoJSON. |
 | `GET /api/buildings` | Load the 3D building context layer for Cesium. |
+| `GET /api/point-overlays` | Load local `real_point` and `sumo_point` shapefile overlays from `Data/sumo`. |
 | `GET /api/scenarios/presets` | Load scenario presets. |
 | `POST /api/scenarios/validate` | Validate scenario settings without running SUMO. |
 | `POST /api/runs` | Submit a new generated simulation run. |

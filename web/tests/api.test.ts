@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchBuildings, fetchHealth, fetchNetwork, fetchTrajectories } from "../src/api";
+import {
+  fetchBuildings,
+  fetchHealth,
+  fetchNetwork,
+  fetchPointOverlays,
+  fetchTrajectories,
+} from "../src/api";
 
 describe("fetchHealth", () => {
   it("validates a healthy response", async () => {
@@ -47,6 +53,30 @@ describe("fetchBuildings", () => {
       ),
     );
     await expect(fetchBuildings(fetcher)).resolves.toMatchObject({
+      type: "FeatureCollection",
+    });
+  });
+});
+
+describe("fetchPointOverlays", () => {
+  it("accepts local point overlay GeoJSON", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: "FeatureCollection",
+          metadata: { counts: { real: 1, sumo: 1 } },
+          features: [
+            {
+              type: "Feature",
+              properties: { featureType: "pointOverlay", overlayKind: "sumo" },
+              geometry: { type: "Point", coordinates: [120.2, 23.1] },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    await expect(fetchPointOverlays(fetcher)).resolves.toMatchObject({
       type: "FeatureCollection",
     });
   });
