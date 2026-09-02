@@ -1,7 +1,10 @@
 # Limitations and interpretation
 
-- The NCKU OpenStreetMap network has not been manually validated against field geometry,
-  signal timing, lane rules or current construction.
+- User-selected OpenStreetMap AOI networks are not manually validated against field geometry,
+  signal timing, lane rules, driving-side rules or current construction. The NCKU bbox is a
+  fallback/sample, not proof of calibration.
+- AOI selection is intentionally limited to compact areas. Large districts, whole cities or
+  regional corridors are outside the current runtime, demand and browser-playback scope.
 - Demand is random, synthetic and uncalibrated. Low, medium and high are demonstration
   labels, not traffic states measured in Tainan.
 - Passenger car-following values are behavioural assumptions, not observed driver traits.

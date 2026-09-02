@@ -44,6 +44,7 @@ The backend is a FastAPI app in `api/app/`.
 | `api/app/main.py` | Defines HTTP endpoints such as health, network, scenarios, runs, demo runs and local-data imports. |
 | `api/app/config.py` | Loads YAML and `.env` configuration and exposes public config to the browser. |
 | `api/app/jobs.py` | Owns the in-process run queue. It creates run IDs, writes status files and executes one SUMO run at a time. |
+| `api/app/network_jobs.py` | Owns the in-process AOI network build queue and status transitions. |
 | `api/app/models/` | Pydantic models for scenarios, runs, summaries, trajectories and safety events. |
 | `api/app/services/` | The main business logic. Each service handles one domain area. |
 
@@ -51,8 +52,9 @@ The backend is a FastAPI app in `api/app/`.
 
 | Service | What It Does |
 | --- | --- |
-| `osm_service.py` | Downloads and caches OSM XML for a small configured bounding box. |
-| `network_service.py` | Runs `netconvert`, validates SUMO networks and exports network GeoJSON for Cesium. |
+| `osm_service.py` | Downloads and caches OSM XML for a specific AOI location or the fallback configured bbox. |
+| `network_service.py` | Runs `netconvert`, applies right/left driving-side options, validates SUMO networks and exports network GeoJSON for Cesium. |
+| `network_registry_service.py` | Stores explicit AOI networks under `data/networks/{network_id}` and resolves network metadata, paths and checksums. |
 | `point_overlay_service.py` | Reads local WGS84 point shapefiles from `Data/sumo` and serves real/SUMO comparison points as GeoJSON. |
 | `demand_service.py` | Runs `randomTrips.py` and routing tools to create synthetic vehicle demand. |
 | `simulation_service.py` | Runs SUMO through `libsumo`, writes FCD, tripinfo, collision and SSM outputs, then creates summary JSON. |
@@ -92,13 +94,16 @@ as `/api/runs/{run_id}/trajectories`, `/api/runs/{run_id}/safety-events` and
 
 ### Flow A: Build and Run a New Scenario
 
-1. User changes scenario settings in the dashboard.
-2. `web/src/main.ts` calls `validateScenario()` or `createRun()` from `web/src/api.ts`.
-3. `api/app/main.py` receives the request at `/api/scenarios/validate` or `/api/runs`.
-4. `api/app/jobs.py` writes a queued run and the background worker starts it.
-5. `api/app/services/simulation_service.py` generates demand, runs SUMO and writes raw XML.
-6. `result_service.py` and `safety_service.py` convert raw outputs into compact JSON.
-7. The dashboard polls the run status, then loads trajectories, events, time series and summary.
+1. User chooses a small AOI in the `Study area` panel and clicks `Build network`.
+2. `web/src/main.ts` calls `createNetwork()` and polls `fetchNetworkStatus()`.
+3. `api/app/network_jobs.py` downloads OSM, runs `netconvert` and registers a ready network.
+4. User changes scenario settings in the dashboard.
+5. `web/src/main.ts` calls `validateScenario()` and `createRun()` with the selected `networkId`.
+6. `api/app/main.py` receives the request at `/api/scenarios/validate` or `/api/runs`.
+7. `api/app/jobs.py` writes a queued run and the background worker starts it.
+8. `api/app/services/simulation_service.py` generates demand, runs SUMO and writes raw XML.
+9. `result_service.py` and `safety_service.py` convert raw outputs into compact JSON.
+10. The dashboard polls the run status, then loads trajectories, events, time series and summary.
 
 ### Flow B: Import Your Existing Local SUMO Data
 
@@ -119,7 +124,8 @@ appears as a local run rather than the old NCKU demo location.
 | --- | --- |
 | `data/environment.json` | Detected local environment, tool versions and simulation mode. |
 | `data/raw/` | Cached OSM downloads. |
-| `data/network/` | SUMO `.net.xml`, network GeoJSON, logs and metadata. |
+| `data/network/` | Legacy SUMO `.net.xml`, network GeoJSON, logs and metadata compatibility cache. |
+| `data/networks/{network_id}/` | Registered AOI OSM source, SUMO network, GeoJSON, metadata, request and source-reference files. |
 | `data/demand/` | Generated trips and routed demand. |
 | `data/runs/{run_id}/` | One completed, failed or queued run. |
 | `data/cache/archives/` | ZIP exports of completed runs. |
@@ -128,7 +134,7 @@ Typical files inside a run directory:
 
 | File | Meaning |
 | --- | --- |
-| `run.json` | Run ID, status, scenario name and checksum. |
+| `run.json` | Run ID, status, scenario checksum, selected network ID and network checksum. |
 | `effective-scenario.json` | Normalized scenario used for the run. |
 | `trajectories.json` | Browser-ready vehicle samples with time, lon/lat, speed and acceleration. |
 | `safety-events.json` | Parsed TTC, braking and collision events. |
@@ -146,10 +152,14 @@ Typical files inside a run directory:
 | `GET /api/config` | Read public project defaults and capabilities. |
 | `GET /api/environment` | Read detected local tool versions and simulation mode. |
 | `GET /api/network` | Load the prepared network GeoJSON. |
+| `POST /api/networks` | Queue or reuse an explicit AOI network build. |
+| `GET /api/networks` | List registered AOI networks. |
+| `GET /api/networks/{network_id}/status` | Poll AOI network build status. |
+| `GET /api/networks/{network_id}/geojson` | Load Cesium-ready GeoJSON for a selected AOI network. |
 | `GET /api/point-overlays` | Load local `real_point` and `sumo_point` shapefile overlays from `Data/sumo`. |
 | `GET /api/scenarios/presets` | Load scenario presets. |
 | `POST /api/scenarios/validate` | Validate scenario settings without running SUMO. |
-| `POST /api/runs` | Submit a new generated simulation run. |
+| `POST /api/runs` | Submit a new generated simulation run for a selected `networkId`. |
 | `GET /api/runs` | List known runs. |
 | `GET /api/runs/{run_id}/status` | Poll run status. |
 | `GET /api/runs/{run_id}/summary` | Load summary metrics. |
@@ -176,7 +186,8 @@ Typical files inside a run directory:
 
 | Goal | Start Here |
 | --- | --- |
-| Change the default map area | `config/default.yaml` and `docs/platforms/*.md` if setup assumptions change. |
+| Change the fallback/sample map area | `config/default.yaml` and `docs/platforms/*.md` if setup assumptions change. |
+| Change AOI network registry behavior | `api/app/network_jobs.py`, `api/app/models/network.py` and `api/app/services/network_registry_service.py`. |
 | Add a scenario preset | Add a YAML file in `scenarios/presets/`. |
 | Add a new scenario field | Update `api/app/models/scenario.py`, frontend controls in `web/src/main.ts`, and API schemas in `web/src/api.ts`. |
 | Change run execution | `api/app/services/simulation_service.py`. |
@@ -205,6 +216,9 @@ Typical files inside a run directory:
 ### `Run simulation`
 
 `web/src/main.ts` button handler
+-> `createNetwork()` / `fetchNetworkStatus()` in `web/src/api.ts`
+-> `POST /api/networks` in `api/app/main.py`
+-> `NetworkBuildManager.create()` in `api/app/network_jobs.py`
 -> `validateScenario()` and `createRun()` in `web/src/api.ts`
 -> `POST /api/runs` in `api/app/main.py`
 -> `RunManager.create()` in `api/app/jobs.py`
@@ -218,7 +232,7 @@ Typical files inside a run directory:
 | --- | --- |
 | API health and run endpoints | `api/tests/test_health.py`, `api/tests/test_run_api.py` |
 | Scenario validation | `api/tests/test_scenario.py` |
-| Network and demand workflow | `api/tests/test_network_integration.py`, `api/tests/test_demand_and_run.py` |
+| Network and demand workflow | `api/tests/test_network_registry.py`, `api/tests/test_network_integration.py`, `api/tests/test_demand_and_run.py` |
 | Local data import | `api/tests/test_local_data_service.py` |
 | FCD and safety parsing | `api/tests/test_result_service.py`, `api/tests/test_safety_service.py` |
 | Frontend API client | `web/tests/api.test.ts` |

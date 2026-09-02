@@ -40,6 +40,24 @@ To refresh the public snapshot, import or generate a completed run locally, run
 
 ---
 
+# Current repository extension: global AOI dashboard revision
+
+The dashboard is no longer fixed to the original NCKU location. Treat
+`config/default.yaml` as fallback/sample configuration only. New generated simulations
+should use the explicit AOI network flow:
+
+1. create or reuse a network through `POST /api/networks`;
+2. store artefacts under `data/networks/{network_id}`;
+3. run scenarios through `POST /api/runs` with `{ "networkId": "...", "scenario": ... }`;
+4. preserve local-data import and GitHub Pages static playback compatibility.
+
+Do not reintroduce implicit generated-run behavior based on `latest_network()` or a
+hard-coded camera/location label. Legacy `data/network/` helpers may exist only as
+compatibility fallback paths. For left-hand traffic AOIs, use SUMO netconvert's documented
+`--lefthand` option; verify official SUMO documentation when changing SUMO flags.
+
+---
+
 # 1. Project objective
 
 Create a small, reproducible traffic-simulation digital-twin demonstrator that:

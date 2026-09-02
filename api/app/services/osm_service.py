@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 
 from app.config import Settings
+from app.models.scenario import LocationConfig
 
 from .checksum_service import file_checksum, object_checksum
 
@@ -24,11 +25,11 @@ class OsmArtifact:
     bytes_downloaded: int
 
 
-def _cache_key(settings: Settings) -> str:
+def _cache_key(settings: Settings, location: LocationConfig) -> str:
     return object_checksum(
         {
             "source": settings.osm_url,
-            "location": settings.location.model_dump(mode="json", by_alias=True),
+            "location": location.model_dump(mode="json", by_alias=True),
         }
     )
 
@@ -36,18 +37,23 @@ def _cache_key(settings: Settings) -> str:
 def download_osm(
     settings: Settings,
     *,
+    location: LocationConfig | None = None,
+    destination_dir: Path | None = None,
+    filename_stem: str | None = None,
     force: bool = False,
     transport: httpx.BaseTransport | None = None,
 ) -> OsmArtifact:
-    raw_dir = settings.data_dir / "raw"
+    location = location or settings.location
+    raw_dir = destination_dir or settings.data_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    key = _cache_key(settings)
-    path = raw_dir / f"{settings.location.name}-{key[:12]}.osm.xml"
+    key = _cache_key(settings, location)
+    stem = filename_stem or f"{location.name}-{key[:12]}"
+    path = raw_dir / f"{stem}.osm.xml"
     metadata_path = path.with_suffix(".metadata.json")
     if path.is_file() and metadata_path.is_file() and not force:
         return OsmArtifact(path, file_checksum(path), True, path.stat().st_size)
 
-    bbox = settings.location.bbox
+    bbox = location.bbox
     params = {"bbox": f"{bbox.west},{bbox.south},{bbox.east},{bbox.north}"}
     headers = {"User-Agent": "sumo-cesium-safety-twin/0.1 (+local research prototype)"}
     last_error = "unknown error"
@@ -76,7 +82,7 @@ def download_osm(
                         "cacheKey": key,
                         "checksum": checksum,
                         "source": settings.osm_url,
-                        "attribution": "© OpenStreetMap contributors, ODbL 1.0",
+                        "attribution": "OpenStreetMap contributors, ODbL 1.0",
                         "bytes": len(content),
                     },
                     indent=2,

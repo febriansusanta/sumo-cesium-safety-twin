@@ -23,14 +23,33 @@ and libsumo wheels inside `.venv`.
 port availability and terminates both process trees on interruption. Vite proxies `/api`
 to FastAPI, matching the eventual single-origin production contract.
 
+## Global AOI network registry
+
+`config/default.yaml` still provides a small NCKU/Tainan fallback bbox, but it is no longer
+the dashboard's fixed active location. The browser exposes a `Study area` panel where users
+enter a small bbox or copy the current Cesium view, choose right- or left-hand driving, and
+queue a network build through `POST /api/networks`.
+
+Network builds are stored under `data/networks/{network_id}` with their OSM source,
+request JSON, source-reference JSON, SUMO `.net.xml`, Cesium GeoJSON, metadata and
+`netconvert` log. The registry records checksums, bbox, driving side, SUMO version,
+passenger edge/lane/junction counts and warnings. For left-hand traffic, the builder passes
+SUMO netconvert's documented `--lefthand` flag.
+
+Generated runs now resolve an explicit `networkId`. The legacy "latest network" cache is
+registered only as a compatibility fallback for old scripts, demo archives and local-data
+imports; new dashboard runs should not depend on whichever `.net.xml` was touched last.
+
 ## Components and data flow
 
-1. A validated location and bounding box are read from YAML with environment overrides.
+1. A validated AOI bbox is submitted from the dashboard or CLI, with YAML defaults used
+   only as fallback/sample inputs.
 2. The pipeline downloads and caches OSM XML from the direct map API, then invokes
    `netconvert` using argument arrays. The network cache key includes OSM content, SUMO
-   version, conversion options and geographic clipping boundary.
+   version, conversion options, driving side and geographic clipping boundary.
 3. `randomTrips.py` creates deterministic passenger demand and routed vehicles.
-4. A single in-process worker runs one libsumo simulation at a time.
+4. A run request references the selected `networkId`, and a single in-process worker runs
+   one libsumo simulation at a time.
 5. Trajectory subscriptions, FCD, trip information, collision logs and SSM XML are retained.
 6. Projection metadata and PyProj convert local SUMO positions to WGS84.
 7. Parsers write compact JSON results; raw SUMO XML is never sent to the browser.

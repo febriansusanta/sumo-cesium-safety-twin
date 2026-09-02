@@ -52,6 +52,7 @@ def ensure_directories() -> None:
     for relative in (
         "data/raw",
         "data/network",
+        "data/networks",
         "data/demand",
         "data/runs",
         "data/cache",

@@ -50,6 +50,22 @@ The screen has three main areas:
 
 The dashboard is for completed-run playback. It is not a live traffic feed.
 
+## Study Area And Generated Runs
+
+The dashboard now has a `Study area` section above the scenario controls. This is used only
+when creating a new generated SUMO run:
+
+1. Enter a small bbox or copy the current Cesium view.
+2. Choose `right` or `left` driving side.
+3. Click `Build network`.
+4. Wait for the network status to become `ready`.
+5. Run a scenario.
+
+The generated run is linked to the selected `networkId`, so it no longer depends on the old
+hard-coded NCKU label or whichever network file was most recently created. The NCKU bbox in
+`config/default.yaml` is now a fallback/sample for setup, not the dashboard's fixed active
+location.
+
 ## Source Files Behind The Current Dashboard
 
 These files come from the local `Data` folder and are imported into the app as browser-ready
@@ -165,6 +181,13 @@ The controls describe analysis assumptions, but they do not change the already-i
 To change the actual run behavior, a new SUMO simulation must be generated or a different local
 SUMO result folder must be imported.
 
+For generated SUMO runs:
+
+```text
+The Study area controls choose the road network. The Scenario controls choose synthetic
+demand, TTC thresholds and vehicle behavior assumptions for the selected network.
+```
+
 ## How To Confirm The Dashboard Uses Local Data
 
 Look for these signs:
@@ -175,8 +198,9 @@ Look for these signs:
 4. The dashboard shows 1,951 vehicles and 319 completed vehicles for the current run.
 5. `source-files.json` points back to `Data/Nanke/project/高精`.
 
-If the dashboard says `NCKU / Daxue / Shengli`, it is showing the original default location
-label rather than the imported Nanke data label.
+If the dashboard has no imported or selected run, the location can say `No AOI selected`.
+If an old screenshot says `NCKU / Daxue / Shengli`, that was the original fixed project
+label rather than proof that the Nanke data failed to load.
 
 ## What The Data Is Not
 
@@ -266,6 +290,7 @@ us inspect the simulation, but they are not calibrated operational safety findin
 | --- | --- |
 | `README.md` | How to start the app and run common commands. |
 | `docs/code-structure.md` | How the codebase is organized. |
+| `docs/global-aoi.md` | How the global Study Area network workflow works. |
 | `docs/local-data.md` | How the local `Data` folder importer works. |
 | `docs/dashboard-vs-source-comparison.md` | Direct comparison between dashboard values and the original source files. |
 | `docs/architecture.md` | Technical architecture and data flow. |

@@ -1,3 +1,4 @@
+from .network import DrivingSide, NetworkBuildRequest, NetworkMetadata, NetworkStatus
 from .scenario import (
     BoundingBox,
     DemandConfig,
@@ -10,7 +11,11 @@ from .scenario import (
 __all__ = [
     "BoundingBox",
     "DemandConfig",
+    "DrivingSide",
     "LocationConfig",
+    "NetworkBuildRequest",
+    "NetworkMetadata",
+    "NetworkStatus",
     "SafetyConfig",
     "ScenarioConfig",
     "VehicleConfig",

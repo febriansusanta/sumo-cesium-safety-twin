@@ -9,7 +9,6 @@ import {
   Viewer,
 } from "cesium";
 
-const NCKU_VIEW = { longitude: 120.2184, latitude: 22.9962 };
 const TAIWAN_BASEMAP_RECTANGLE = Rectangle.fromDegrees(118, 20, 123, 26.8);
 const NLSC_EMAP_TILE_URL =
   "https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}";
@@ -113,7 +112,7 @@ export const BASEMAPS: BasemapOption[] = [
   },
 ];
 
-export const DEFAULT_BASEMAP_ID = "nlsc";
+export const DEFAULT_BASEMAP_ID = "dark";
 
 export function basemapUsesMapboxBuildings(id: string): boolean {
   const option = BASEMAPS.find((basemap) => basemap.id === id) ?? BASEMAPS[0]!;
@@ -146,9 +145,6 @@ export function createViewer(container: HTMLElement): Viewer {
     terrainProvider: new EllipsoidTerrainProvider(),
   });
   setBasemap(viewer, DEFAULT_BASEMAP_ID);
-  viewer.camera.flyTo({
-    destination: Cartesian3.fromDegrees(NCKU_VIEW.longitude, NCKU_VIEW.latitude, 900),
-    duration: 0,
-  });
+  viewer.camera.setView({ destination: Cartesian3.fromDegrees(0, 20, 20_000_000) });
   return viewer;
 }

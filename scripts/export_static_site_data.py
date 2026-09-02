@@ -17,6 +17,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 
 from app.config import get_settings
+from app.services.network_registry_service import NetworkRegistry, NetworkRegistryError
 from app.services.point_overlay_service import PointOverlayError, load_point_overlays
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,13 +61,19 @@ def main() -> int:
     missing = [name for name in RUN_FILES if not (run_dir / name).is_file()]
     if missing:
         raise SystemExit(f"Run {run_id} is missing required files: {', '.join(missing)}")
+    run_payload = _read_json(run_dir / "run.json")
 
     output = args.output.resolve()
     _replace_static_root(output)
 
-    network_path = args.network or _latest_network_geojson(settings.data_dir / "network")
+    network_path = (
+        args.network
+        or _network_geojson_for_run(settings, run_payload)
+        or _latest_registered_network_geojson(settings)
+        or _latest_network_geojson(settings.data_dir / "network")
+    )
     if network_path is None:
-        raise SystemExit("No network GeoJSON was found in data/network")
+        raise SystemExit("No network GeoJSON was found in data/networks or data/network")
 
     shutil.copyfile(network_path, output / "network.geojson")
     _write_json(
@@ -83,7 +90,6 @@ def main() -> int:
     for filename in RUN_FILES:
         shutil.copyfile(run_dir / filename, runs_dir / filename)
 
-    run_payload = _read_json(run_dir / "run.json")
     _write_json(output / "runs.json", [run_payload])
     _write_json(
         output / "index.json",
@@ -133,6 +139,26 @@ def _latest_network_geojson(network_dir: Path) -> Path | None:
     if not candidates:
         return None
     return sorted(candidates, key=lambda path: path.stat().st_mtime)[-1]
+
+
+def _network_geojson_for_run(settings: Any, run_payload: dict[str, Any]) -> Path | None:
+    network_id = run_payload.get("networkId")
+    if not isinstance(network_id, str) or not network_id:
+        return None
+    try:
+        path = NetworkRegistry(settings).geojson_path(network_id)
+    except NetworkRegistryError:
+        return None
+    return path if path.is_file() else None
+
+
+def _latest_registered_network_geojson(settings: Any) -> Path | None:
+    registry = NetworkRegistry(settings)
+    metadata = registry.latest_ready()
+    if metadata is None:
+        return None
+    path = registry.geojson_path(metadata.network_id)
+    return path if path.is_file() else None
 
 
 def _load_static_presets() -> list[dict[str, Any]]:

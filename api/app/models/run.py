@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .base import ApiModel
-from .scenario import ScenarioConfig
+from .network import DrivingSide
+from .scenario import BoundingBox, ScenarioConfig
 
 UTC = timezone.utc  # noqa: UP017
 
@@ -25,9 +26,26 @@ class RunMetadata(ApiModel):
     status: RunStatus
     scenario: ScenarioConfig
     scenario_checksum: str
+    network_id: str | None = None
+    network_name: str | None = None
+    network_checksum: str | None = None
+    network_bbox: BoundingBox | None = None
+    driving_side: DrivingSide | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     message: str | None = None
+
+
+class RunCreateRequest(ApiModel):
+    network_id: str | None = Field(default=None, min_length=1, max_length=160)
+    scenario: ScenarioConfig
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_scenario_payload(cls, data: object) -> object:
+        if isinstance(data, dict) and "scenario" not in data:
+            return {"scenario": data}
+        return data
 
 
 class RunSummary(ApiModel):
@@ -35,6 +53,11 @@ class RunSummary(ApiModel):
     duration: float
     seed: int
     demand_level: str
+    network_id: str | None = None
+    network_name: str | None = None
+    network_checksum: str | None = None
+    network_bbox: BoundingBox | None = None
+    driving_side: DrivingSide | None = None
     requested_vehicle_count: int
     generated_vehicle_count: int
     routed_vehicle_count: int

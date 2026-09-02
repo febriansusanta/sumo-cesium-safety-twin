@@ -13,15 +13,18 @@ from fastapi.responses import FileResponse
 
 from .config import REPO_ROOT, get_settings, public_config
 from .jobs import RunConflictError, RunManager, load_summary
-from .models.run import RunMetadata
+from .models.network import NetworkBuildRequest, NetworkMetadata
+from .models.run import RunCreateRequest, RunMetadata
 from .models.scenario import ScenarioConfig
+from .network_jobs import NetworkBuildConflictError, NetworkBuildManager
 from .services.archive_service import ArchiveError, create_run_archive, import_run_archive
 from .services.local_data_service import (
     LocalDataImportError,
     discover_local_datasets,
     import_local_dataset,
 )
-from .services.network_service import latest_geojson, latest_network
+from .services.network_registry_service import NetworkRegistryError
+from .services.network_service import latest_geojson
 from .services.point_overlay_service import PointOverlayError, load_point_overlays
 from .services.preset_service import load_presets
 
@@ -39,12 +42,16 @@ def configure_logging(level: str) -> None:
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
-    manager = RunManager(settings)
+    network_manager = NetworkBuildManager(settings)
+    await network_manager.start()
+    manager = RunManager(settings, network_registry=network_manager.registry)
     await manager.start()
+    application.state.network_manager = network_manager
     application.state.run_manager = manager
     logging.getLogger(__name__).info("API startup complete")
     yield
     await manager.stop()
+    await network_manager.stop()
 
 
 app = FastAPI(
@@ -89,8 +96,14 @@ def environment() -> dict[str, object]:
 
 
 @app.get("/api/network", tags=["network"])
-def network() -> dict[str, object]:
-    path = latest_geojson(get_settings())
+def network(request: Request) -> dict[str, object]:
+    try:
+        registry = _network_manager(request).registry
+        metadata = registry.latest_ready()
+        path = registry.geojson_path(metadata.network_id) if metadata is not None else None
+    except NetworkRegistryError:
+        path = None
+    path = path or latest_geojson(get_settings())
     if path is None:
         raise HTTPException(status_code=404, detail="Network has not been prepared")
     return json.loads(path.read_text(encoding="utf-8"))
@@ -108,6 +121,69 @@ def _manager(request: Request) -> RunManager:
     return request.app.state.run_manager
 
 
+def _network_manager(request: Request) -> NetworkBuildManager:
+    return request.app.state.network_manager
+
+
+@app.post(
+    "/api/networks",
+    response_model=NetworkMetadata,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["network"],
+)
+def create_network(payload: NetworkBuildRequest, request: Request) -> NetworkMetadata:
+    try:
+        return _network_manager(request).create(payload)
+    except NetworkRegistryError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/networks", response_model=list[NetworkMetadata], tags=["network"])
+def list_networks(request: Request) -> list[NetworkMetadata]:
+    return _network_manager(request).list()
+
+
+def _find_network(request: Request, network_id: str) -> NetworkMetadata:
+    try:
+        record = _network_manager(request).get(network_id)
+    except NetworkRegistryError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    if record is None:
+        raise HTTPException(status_code=404, detail="Network not found")
+    return record
+
+
+@app.get("/api/networks/{network_id}", response_model=NetworkMetadata, tags=["network"])
+@app.get("/api/networks/{network_id}/status", response_model=NetworkMetadata, tags=["network"])
+def get_network(network_id: str, request: Request) -> NetworkMetadata:
+    return _find_network(request, network_id)
+
+
+@app.get("/api/networks/{network_id}/geojson", tags=["network"])
+def get_network_geojson(network_id: str, request: Request) -> dict[str, object]:
+    _find_network(request, network_id)
+    try:
+        path = _network_manager(request).registry.geojson_path(network_id)
+    except NetworkRegistryError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    if not path.is_file():
+        raise HTTPException(status_code=409, detail="Network GeoJSON is not available")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+@app.delete("/api/networks/{network_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["network"])
+def delete_network(network_id: str, request: Request) -> Response:
+    try:
+        deleted = _network_manager(request).delete(network_id)
+    except NetworkBuildConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except NetworkRegistryError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Network not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @app.get("/api/scenarios/presets", tags=["scenarios"])
 def presets() -> list[dict[str, object]]:
     return load_presets(REPO_ROOT / "scenarios/presets")
@@ -122,7 +198,6 @@ def local_datasets() -> list[dict[str, object]]:
 def import_local_data(dataset_id: str, request: Request) -> RunMetadata:
     try:
         record = import_local_dataset(get_settings(), dataset_id)
-        _manager(request).network = latest_network(get_settings())
     except LocalDataImportError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return record
@@ -147,8 +222,11 @@ def validate_scenario(scenario: ScenarioConfig) -> dict[str, object]:
 @app.post(
     "/api/runs", response_model=RunMetadata, status_code=status.HTTP_202_ACCEPTED, tags=["runs"]
 )
-def create_run(scenario: ScenarioConfig, request: Request) -> RunMetadata:
-    return _manager(request).create(scenario)
+def create_run(payload: RunCreateRequest, request: Request) -> RunMetadata:
+    try:
+        return _manager(request).create(payload.scenario, payload.network_id)
+    except NetworkRegistryError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @app.get("/api/runs", response_model=list[RunMetadata], tags=["runs"])

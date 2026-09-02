@@ -366,6 +366,9 @@ def import_local_dataset(
         duration=observed_duration,
         seed=scenario.seed,
         demand_level=scenario.demand.level.value,
+        network_id=f"local-{network_key[:12]}",
+        network_name=dataset.title,
+        network_checksum=file_checksum(network_path),
         requested_vehicle_count=trip_count or routed_count or len(trajectories),
         generated_vehicle_count=trip_count or routed_count or len(trajectories),
         routed_vehicle_count=routed_count or len(trajectories),
@@ -451,6 +454,9 @@ def import_local_dataset(
         status=RunStatus.COMPLETED,
         scenario=scenario,
         scenario_checksum=scenario.checksum(),
+        network_id=f"local-{network_key[:12]}",
+        network_name=dataset.title,
+        network_checksum=file_checksum(network_path),
         message="Imported from the local Data folder.",
     )
     metadata_path.write_text(

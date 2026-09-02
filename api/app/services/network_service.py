@@ -10,6 +10,8 @@ import sumolib
 from scripts.platform import resolve_executable
 
 from app.config import Settings
+from app.models.network import DrivingSide
+from app.models.scenario import LocationConfig
 
 from .checksum_service import file_checksum, object_checksum
 from .coordinate_service import CoordinateTransformer, read_network_location
@@ -113,26 +115,51 @@ def export_geojson(network_path: Path, destination: Path) -> dict[str, Any]:
     return collection
 
 
-def build_network(settings: Settings, osm_path: Path, *, force: bool = False) -> NetworkArtifact:
+def _driving_side_value(driving_side: DrivingSide | str) -> str:
+    return driving_side.value if isinstance(driving_side, DrivingSide) else driving_side
+
+
+def build_network(
+    settings: Settings,
+    osm_path: Path,
+    *,
+    location: LocationConfig | None = None,
+    destination_dir: Path | None = None,
+    output_stem: str | None = None,
+    driving_side: DrivingSide | str = DrivingSide.RIGHT,
+    force: bool = False,
+) -> NetworkArtifact:
     netconvert = resolve_executable("netconvert", "NETCONVERT_BINARY")
     if netconvert is None:
         raise NetworkBuildError("netconvert was not found; run scripts/doctor.py")
     version = _sumo_version(netconvert)
-    bbox = settings.location.bbox
+    location = location or settings.location
+    bbox = location.bbox
     options = [
         *BASE_NETWORK_OPTIONS,
         "--keep-edges.in-geo-boundary",
         f"{bbox.west},{bbox.south},{bbox.east},{bbox.north}",
     ]
+    driving_side_text = _driving_side_value(driving_side)
+    if driving_side_text == DrivingSide.LEFT.value:
+        # SUMO netconvert documents --lefthand as the left-hand traffic network flag.
+        options.append("--lefthand")
     key = object_checksum(
-        {"osm": file_checksum(osm_path), "sumoVersion": version, "options": options}
+        {
+            "osm": file_checksum(osm_path),
+            "sumoVersion": version,
+            "location": location.model_dump(mode="json", by_alias=True),
+            "drivingSide": driving_side_text,
+            "options": options,
+        }
     )
-    output_dir = settings.data_dir / "network"
+    output_dir = destination_dir or settings.data_dir / "network"
     output_dir.mkdir(parents=True, exist_ok=True)
-    network_path = output_dir / f"{settings.location.name}-{key[:12]}.net.xml"
-    geojson_path = output_dir / f"{settings.location.name}-{key[:12]}.geojson"
-    metadata_path = output_dir / f"{settings.location.name}-{key[:12]}.metadata.json"
-    log_path = output_dir / f"{settings.location.name}-{key[:12]}.netconvert.log"
+    stem = output_stem or f"{location.name}-{key[:12]}"
+    network_path = output_dir / f"{stem}.net.xml"
+    geojson_path = output_dir / f"{stem}.geojson"
+    metadata_path = output_dir / f"{stem}.metadata.json"
+    log_path = output_dir / f"{stem}.netconvert.log"
     if all(path.is_file() for path in (network_path, geojson_path, metadata_path)) and not force:
         stats = validate_network(network_path)
         return NetworkArtifact(network_path, geojson_path, metadata_path, True, *stats.values())
@@ -162,6 +189,9 @@ def build_network(settings: Settings, osm_path: Path, *, force: bool = False) ->
         json.dumps(
             {
                 "cacheKey": key,
+                "bbox": bbox.model_dump(by_alias=True),
+                "drivingSide": driving_side_text,
+                "location": location.model_dump(by_alias=True),
                 "networkChecksum": file_checksum(network_path),
                 "osmChecksum": file_checksum(osm_path),
                 "sumoVersion": version,

@@ -3,8 +3,12 @@ import "./styles/main.css";
 import * as Cesium from "cesium";
 import {
   fetchHealth,
+  createNetwork,
   fetchDemoRuns,
   fetchNetwork,
+  fetchNetworkGeoJson,
+  fetchNetworks,
+  fetchNetworkStatus,
   fetchPresets,
   fetchRun,
   fetchRuns,
@@ -19,11 +23,20 @@ import {
   validateScenario,
   loadDemoRun,
 } from "./api";
-import type { NetworkGeoJson, Preset, SafetyEvent, Trajectory } from "./api";
+import type {
+  BoundingBox,
+  NetworkBuildRequest,
+  NetworkGeoJson,
+  NetworkMetadata,
+  Preset,
+  SafetyEvent,
+  Trajectory,
+} from "./api";
 import { renderTtcChart } from "./charts/ttc-chart";
 import { renderVehicleChart } from "./charts/vehicle-chart";
 import { EVENT_COLORS, humanizeEventType, renderSafetyEvents } from "./cesium/events";
 import {
+  clearMapboxBuildings,
   loadMapboxBuildings,
   type MapboxBuildingLayer,
 } from "./cesium/mapbox-buildings";
@@ -59,7 +72,18 @@ root.innerHTML = `
     <output id="api-status" class="status" aria-live="polite">Checking API…</output>
   </header>
   <main id="main" class="dashboard">
-    <aside class="panel panel-left" aria-labelledby="scenario-heading">
+    <aside class="panel panel-left" aria-labelledby="study-area-heading scenario-heading">
+      <h2 id="study-area-heading">Study area</h2>
+      <div class="field-grid">
+        <label>AOI name<input id="aoi-name" type="text" maxlength="80" value="custom-aoi" /></label>
+        <label>Driving side<select id="driving-side"><option value="right">right</option><option value="left">left</option></select></label>
+        <label>West<input id="aoi-west" type="number" min="-180" max="180" step="0.000001" /></label>
+        <label>South<input id="aoi-south" type="number" min="-90" max="90" step="0.000001" /></label>
+        <label>East<input id="aoi-east" type="number" min="-180" max="180" step="0.000001" /></label>
+        <label>North<input id="aoi-north" type="number" min="-90" max="90" step="0.000001" /></label>
+      </div>
+      <div class="button-row"><button id="use-current-view" type="button">Use current view</button><button id="build-network" type="button">Build network</button></div>
+      <output id="aoi-status" class="form-message" aria-live="polite">Build a small AOI network before running a generated scenario.</output>
       <h2 id="scenario-heading">Scenario</h2>
       <label for="preset">Preset</label>
       <select id="preset"><option>Loading presets…</option></select>
@@ -83,8 +107,8 @@ root.innerHTML = `
       <div class="button-row"><button id="reset" type="button">Reset</button><button id="validate" type="button">Validate</button><button id="run" type="button">Run simulation</button><button id="load-demo" type="button">Load demo run</button><button id="load-local-data" type="button">Load Data folder</button></div>
       <output id="validation" class="form-message" aria-live="polite"></output>
       <dl>
-        <div><dt>Location</dt><dd id="location-status">NCKU / Daxue / Shengli</dd></div>
-        <div><dt>Network</dt><dd id="network-status">Loading…</dd></div>
+        <div><dt>Location</dt><dd id="location-status">No AOI selected</dd></div>
+        <div><dt>Network</dt><dd id="network-status">Build an AOI network</dd></div>
         <div><dt>Point overlays</dt><dd id="point-status">Loading…</dd></div>
         <div><dt>Playback</dt><dd>Offline completed runs</dd></div>
         <div><dt>Run</dt><dd id="run-status">Looking for completed runs…</dd></div>
@@ -291,12 +315,22 @@ requestAnimationFrame(animate);
 
 const status = document.querySelector<HTMLOutputElement>("#api-status");
 let staticDashboardMode = false;
+let selectedNetwork: NetworkMetadata | undefined;
+let selectedNetworkId: string | undefined;
 
 function updateBackendActionState(): void {
-  for (const selector of ["#validate", "#run", "#load-demo", "#load-local-data"]) {
+  for (const selector of [
+    "#validate",
+    "#load-demo",
+    "#load-local-data",
+    "#use-current-view",
+    "#build-network",
+  ]) {
     const button = document.querySelector<HTMLButtonElement>(selector);
     if (button) button.disabled = staticDashboardMode;
   }
+  const runButton = document.querySelector<HTMLButtonElement>("#run");
+  if (runButton) runButton.disabled = staticDashboardMode || !selectedNetworkId;
 }
 
 void fetchHealth()
@@ -326,22 +360,62 @@ let mappedFeatureCount: number | undefined;
 let buildingFeatureCount: number | undefined;
 
 function updateNetworkStatus(): void {
-  if (!networkStatus || mappedFeatureCount === undefined) return;
+  if (!networkStatus) return;
+  if (mappedFeatureCount === undefined) {
+    networkStatus.textContent = selectedNetwork
+      ? `${selectedNetwork.status} · ${selectedNetwork.name}`
+      : "Build an AOI network";
+    return;
+  }
+  const networkLabel = selectedNetwork ? `${selectedNetwork.name} · ` : "";
   networkStatus.textContent =
     buildingFeatureCount === undefined
-      ? `${mappedFeatureCount} mapped features`
-      : `${mappedFeatureCount} mapped features, ${buildingFeatureCount} Mapbox buildings`;
+      ? `${networkLabel}${mappedFeatureCount} mapped features`
+      : `${networkLabel}${mappedFeatureCount} mapped features, ${buildingFeatureCount} Mapbox buildings`;
 }
 
-void fetchNetwork()
-  .then(async (network) => {
-    currentNetwork = network;
-    networkDataSource = await renderNetwork(viewer, network);
-    applyLayerVisibility();
-    mappedFeatureCount = network.features.length;
-    updateNetworkStatus();
-    void ensureMapboxBuildings();
-  })
+function clearNetworkLayers(): void {
+  if (networkDataSource) {
+    viewer.dataSources.remove(networkDataSource, true);
+    networkDataSource = undefined;
+  }
+  if (mapboxBuildings) {
+    clearMapboxBuildings(viewer, mapboxBuildings.entities);
+    mapboxBuildings = undefined;
+  }
+  buildingFeatureCount = undefined;
+}
+
+async function showNetwork(network: NetworkGeoJson, metadata?: NetworkMetadata): Promise<void> {
+  clearNetworkLayers();
+  selectedNetwork = metadata ?? selectedNetwork;
+  selectedNetworkId =
+    metadata?.status === "ready" ? metadata.networkId : selectedNetworkId;
+  currentNetwork = network;
+  networkDataSource = await renderNetwork(viewer, network);
+  applyLayerVisibility();
+  mappedFeatureCount = network.features.length;
+  updateNetworkStatus();
+  updateBackendActionState();
+  void ensureMapboxBuildings();
+}
+
+void (async () => {
+  try {
+    const networks = await fetchNetworks();
+    const ready = networks.find((network) => network.status === "ready");
+    if (ready) {
+      selectedNetwork = ready;
+      selectedNetworkId = ready.networkId;
+      await showNetwork(await fetchNetworkGeoJson(ready.networkId), ready);
+      applySelectedNetwork(ready);
+      return;
+    }
+  } catch (error) {
+    console.warn(error instanceof Error ? error.message : "Network registry unavailable");
+  }
+  await showNetwork(await fetchNetwork());
+})()
   .catch((error: unknown) => {
     if (networkStatus) {
       networkStatus.textContent = error instanceof Error ? error.message : "Network unavailable";
@@ -365,7 +439,7 @@ void fetchPointOverlays()
     }
   });
 
-const defaultLocationLabel = "NCKU / Daxue / Shengli";
+const defaultLocationLabel = "No AOI selected";
 const locationStatus = document.querySelector<HTMLElement>("#location-status");
 const runStatus = document.querySelector<HTMLElement>("#run-status");
 const vehicleCount = document.querySelector<HTMLElement>("#vehicle-count");
@@ -376,11 +450,12 @@ const vehicleChart = document.querySelector<HTMLElement>("#vehicle-chart");
 const summaryPanel = document.querySelector<HTMLElement>("#summary");
 const comparison = document.querySelector<HTMLElement>("#comparison");
 
-function locationLabelForRun(scenarioName: string): string {
+function locationLabelForRun(scenarioName: string, networkName?: string | null): string {
+  if (networkName) return networkName;
   const localPrefix = "Local data:";
   return scenarioName.startsWith(localPrefix)
     ? scenarioName.slice(localPrefix.length).trim()
-    : defaultLocationLabel;
+    : (selectedNetwork?.name ?? defaultLocationLabel);
 }
 
 const eventTooltip = document.querySelector<HTMLElement>("#event-tooltip");
@@ -649,7 +724,9 @@ async function loadRun(runId: string, scenarioName: string): Promise<void> {
     );
   }
   if (runStatus) runStatus.textContent = `${scenarioName} · ${runId}`;
-  if (locationStatus) locationStatus.textContent = locationLabelForRun(scenarioName);
+  if (locationStatus) {
+    locationStatus.textContent = locationLabelForRun(scenarioName, summary.networkName);
+  }
   if (vehicleCount) vehicleCount.textContent = String(trajectories.length);
 }
 
@@ -701,6 +778,148 @@ const selectInput = (id: string): HTMLSelectElement => {
   if (!input) throw new Error(`Missing select ${id}`);
   return input;
 };
+const textInput = (id: string): HTMLInputElement => {
+  const input = document.querySelector<HTMLInputElement>(`#${id}`);
+  if (!input) throw new Error(`Missing input ${id}`);
+  return input;
+};
+
+const aoiStatus = document.querySelector<HTMLOutputElement>("#aoi-status");
+
+function setAoiInputs(
+  bbox: BoundingBox,
+  name = textInput("aoi-name").value || "custom-aoi",
+  drivingSide: "right" | "left" = "right",
+): void {
+  textInput("aoi-name").value = name;
+  numericInput("aoi-west").value = bbox.west.toFixed(6);
+  numericInput("aoi-south").value = bbox.south.toFixed(6);
+  numericInput("aoi-east").value = bbox.east.toFixed(6);
+  numericInput("aoi-north").value = bbox.north.toFixed(6);
+  selectInput("driving-side").value = drivingSide;
+}
+
+function bboxAreaKm2(bbox: BoundingBox): number {
+  const meanLat = ((bbox.south + bbox.north) / 2) * (Math.PI / 180);
+  const width = (bbox.east - bbox.west) * 111.32 * Math.cos(meanLat);
+  const height = (bbox.north - bbox.south) * 110.574;
+  return width * height;
+}
+
+function readAoiNumber(id: string): number {
+  const value = numericInput(id).value.trim();
+  if (!value) throw new Error("AOI bbox fields are required");
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error("AOI bbox fields must be valid numbers");
+  return parsed;
+}
+
+function currentAoiRequest(): NetworkBuildRequest {
+  const bbox: BoundingBox = {
+    west: readAoiNumber("aoi-west"),
+    south: readAoiNumber("aoi-south"),
+    east: readAoiNumber("aoi-east"),
+    north: readAoiNumber("aoi-north"),
+  };
+  if (bbox.west >= bbox.east || bbox.south >= bbox.north) {
+    throw new Error("AOI west/south must be less than east/north");
+  }
+  return {
+    name: textInput("aoi-name").value.trim() || "custom-aoi",
+    bbox,
+    drivingSide: selectInput("driving-side").value === "left" ? "left" : "right",
+  };
+}
+
+function networkStatusText(metadata: NetworkMetadata): string {
+  const area = bboxAreaKm2(metadata.bbox).toFixed(3);
+  const reused = metadata.cacheHit ? " · cache reused" : "";
+  if (metadata.status !== "ready") {
+    return `${metadata.status} · ${metadata.name} · ${area} km2`;
+  }
+  return `${metadata.name} ready · ${metadata.edgeCount} edges · ${metadata.laneCount} lanes · ${metadata.junctionCount} junctions · ${metadata.drivingSide}-hand${reused}`;
+}
+
+function applySelectedNetwork(metadata: NetworkMetadata): void {
+  selectedNetwork = metadata;
+  selectedNetworkId = metadata.status === "ready" ? metadata.networkId : undefined;
+  setAoiInputs(metadata.bbox, metadata.name, metadata.drivingSide);
+  if (aoiStatus) aoiStatus.value = networkStatusText(metadata);
+  if (locationStatus) locationStatus.textContent = metadata.name;
+  mappedFeatureCount = metadata.status === "ready" ? mappedFeatureCount : undefined;
+  updateNetworkStatus();
+  updateBackendActionState();
+}
+
+function markAoiChanged(): void {
+  if (!selectedNetwork && !selectedNetworkId) return;
+  selectedNetwork = undefined;
+  selectedNetworkId = undefined;
+  if (aoiStatus) aoiStatus.value = "AOI changed. Build the network before running.";
+  if (networkStatus) networkStatus.textContent = "AOI changed; build the selected network";
+  if (locationStatus) locationStatus.textContent = textInput("aoi-name").value || "Custom AOI";
+  updateBackendActionState();
+}
+
+for (const id of [
+  "aoi-name",
+  "driving-side",
+  "aoi-west",
+  "aoi-south",
+  "aoi-east",
+  "aoi-north",
+]) {
+  const control = document.querySelector(`#${id}`);
+  control?.addEventListener("input", markAoiChanged);
+  control?.addEventListener("change", markAoiChanged);
+}
+
+document.querySelector<HTMLButtonElement>("#use-current-view")?.addEventListener("click", () => {
+  try {
+    const rectangle = viewer.camera.computeViewRectangle(viewer.scene.globe.ellipsoid);
+    if (!rectangle) throw new Error("Current map view is not a valid AOI");
+    setAoiInputs(
+      {
+        west: Cesium.Math.toDegrees(rectangle.west),
+        south: Cesium.Math.toDegrees(rectangle.south),
+        east: Cesium.Math.toDegrees(rectangle.east),
+        north: Cesium.Math.toDegrees(rectangle.north),
+      },
+      textInput("aoi-name").value || "current-view",
+      selectInput("driving-side").value === "left" ? "left" : "right",
+    );
+    markAoiChanged();
+    if (aoiStatus) {
+      const area = bboxAreaKm2(currentAoiRequest().bbox).toFixed(3);
+      aoiStatus.value = `Current view copied · ${area} km2`;
+    }
+  } catch (error) {
+    if (aoiStatus) aoiStatus.value = error instanceof Error ? error.message : "AOI failed";
+  }
+});
+
+document.querySelector<HTMLButtonElement>("#build-network")?.addEventListener("click", () => {
+  void (async () => {
+    const request = currentAoiRequest();
+    selectedNetwork = undefined;
+    selectedNetworkId = undefined;
+    updateBackendActionState();
+    if (aoiStatus) aoiStatus.value = `Submitting ${request.name}...`;
+    let current = await createNetwork(request);
+    applySelectedNetwork(current);
+    while (!["ready", "failed"].includes(current.status)) {
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+      current = await fetchNetworkStatus(current.networkId);
+      applySelectedNetwork(current);
+    }
+    if (current.status === "failed") throw new Error(current.message ?? "Network build failed");
+    await showNetwork(await fetchNetworkGeoJson(current.networkId), current);
+    applySelectedNetwork(current);
+  })().catch((error: unknown) => {
+    if (aoiStatus) aoiStatus.value = error instanceof Error ? error.message : "Network build failed";
+    updateBackendActionState();
+  });
+});
 
 function nested(record: Record<string, unknown>, key: string): Record<string, unknown> {
   const value = record[key];
@@ -784,9 +1003,12 @@ document.querySelector<HTMLButtonElement>("#validate")?.addEventListener("click"
 });
 document.querySelector<HTMLButtonElement>("#run")?.addEventListener("click", () => {
   void (async () => {
+    if (!selectedNetworkId) {
+      throw new Error("Build or select a ready AOI network before running a simulation");
+    }
     const scenario = currentScenario();
     await validateScenario(scenario);
-    const run = await createRun(scenario);
+    const run = await createRun(scenario, selectedNetworkId);
     if (runStatus) runStatus.textContent = `${run.status} · ${run.runId}`;
     let current = run;
     while (!(["completed", "failed"] as string[]).includes(current.status)) {

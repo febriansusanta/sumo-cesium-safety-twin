@@ -22,11 +22,53 @@ const pointOverlaySchema = geoJsonFeatureCollectionSchema;
 export type NetworkGeoJson = z.infer<typeof networkSchema>;
 export type PointOverlayGeoJson = z.infer<typeof pointOverlaySchema>;
 
+const bboxSchema = z.object({
+  west: z.number(),
+  south: z.number(),
+  east: z.number(),
+  north: z.number(),
+});
+
+const networkMetadataSchema = z.object({
+  networkId: z.string(),
+  name: z.string(),
+  bbox: bboxSchema,
+  drivingSide: z.enum(["right", "left"]),
+  status: z.enum(["queued", "downloading", "building", "ready", "failed"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  source: z.string(),
+  osmChecksum: z.string().nullable(),
+  networkChecksum: z.string().nullable(),
+  geojsonChecksum: z.string().nullable(),
+  sumoVersion: z.string().nullable(),
+  edgeCount: z.number(),
+  laneCount: z.number(),
+  junctionCount: z.number(),
+  cacheHit: z.boolean(),
+  message: z.string().nullable(),
+  warnings: z.array(z.string()),
+});
+
+export type BoundingBox = z.infer<typeof bboxSchema>;
+export type NetworkMetadata = z.infer<typeof networkMetadataSchema>;
+export type NetworkBuildRequest = {
+  name: string;
+  bbox: BoundingBox;
+  drivingSide: "right" | "left";
+  forceRefresh?: boolean;
+};
+
 const runSchema = z.object({
   runId: z.string(),
   status: z.enum(["queued", "preparing", "running", "processing", "completed", "failed"]),
   scenario: z.object({ name: z.string(), duration: z.number() }).passthrough(),
   scenarioChecksum: z.string(),
+  networkId: z.string().nullable().optional(),
+  networkName: z.string().nullable().optional(),
+  networkChecksum: z.string().nullable().optional(),
+  networkBbox: bboxSchema.nullable().optional(),
+  drivingSide: z.enum(["right", "left"]).nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   message: z.string().nullable(),
@@ -99,6 +141,11 @@ const validationSchema = z.object({
 const summarySchema = z
   .object({
     scenarioName: z.string(),
+    networkId: z.string().nullable().optional(),
+    networkName: z.string().nullable().optional(),
+    networkChecksum: z.string().nullable().optional(),
+    networkBbox: bboxSchema.nullable().optional(),
+    drivingSide: z.enum(["right", "left"]).nullable().optional(),
     generatedVehicleCount: z.number(),
     completedVehicleCount: z.number(),
     meanTravelTime: z.number().nullable(),
@@ -203,6 +250,47 @@ export async function fetchNetwork(fetcher: typeof fetch = fetch): Promise<Netwo
   return fetchJson("/api/network", "Network", networkSchema, fetcher, "network.geojson");
 }
 
+export async function createNetwork(
+  payload: NetworkBuildRequest,
+  fetcher: typeof fetch = fetch,
+): Promise<NetworkMetadata> {
+  const response = await fetcher(apiUrl("/api/networks"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`Network build request failed (${response.status})`);
+  return networkMetadataSchema.parse(await response.json());
+}
+
+export async function fetchNetworks(fetcher: typeof fetch = fetch): Promise<NetworkMetadata[]> {
+  return fetchJson("/api/networks", "Network registry", z.array(networkMetadataSchema), fetcher);
+}
+
+export async function fetchNetworkStatus(
+  networkId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<NetworkMetadata> {
+  return fetchJson(
+    `/api/networks/${encodeURIComponent(networkId)}/status`,
+    "Network status",
+    networkMetadataSchema,
+    fetcher,
+  );
+}
+
+export async function fetchNetworkGeoJson(
+  networkId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<NetworkGeoJson> {
+  return fetchJson(
+    `/api/networks/${encodeURIComponent(networkId)}/geojson`,
+    "Network GeoJSON",
+    networkSchema,
+    fetcher,
+  );
+}
+
 export async function fetchPointOverlays(
   fetcher: typeof fetch = fetch,
 ): Promise<PointOverlayGeoJson> {
@@ -286,12 +374,16 @@ export async function validateScenario(
 
 export async function createRun(
   scenario: Record<string, unknown>,
+  networkIdOrFetcher?: string | typeof fetch,
   fetcher: typeof fetch = fetch,
 ): Promise<Run> {
-  const response = await fetcher(apiUrl("/api/runs"), {
+  const networkId = typeof networkIdOrFetcher === "string" ? networkIdOrFetcher : undefined;
+  const effectiveFetcher = typeof networkIdOrFetcher === "function" ? networkIdOrFetcher : fetcher;
+  const body = networkId ? { networkId, scenario } : scenario;
+  const response = await effectiveFetcher(apiUrl("/api/runs"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(scenario),
+    body: JSON.stringify(body),
   });
   if (response.status !== 202) throw new Error(`Run submission failed (${response.status})`);
   return runSchema.parse(await response.json());

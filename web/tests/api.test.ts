@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createNetwork,
+  createRun,
   fetchHealth,
   fetchNetwork,
   fetchPointOverlays,
@@ -51,6 +53,74 @@ describe("fetchNetwork", () => {
       globalThis.fetch = originalFetch;
     }
     expect(fallbackFetch).toHaveBeenNthCalledWith(2, "/static-data/network.geojson");
+  });
+});
+
+describe("network build and run submission", () => {
+  it("submits an explicit AOI network build request", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          networkId: "net-test",
+          name: "test-aoi",
+          bbox: { west: 120.1, south: 22.9, east: 120.11, north: 22.91 },
+          drivingSide: "left",
+          status: "queued",
+          createdAt: "2026-09-02T00:00:00Z",
+          updatedAt: "2026-09-02T00:00:00Z",
+          source: "OpenStreetMap",
+          osmChecksum: null,
+          networkChecksum: null,
+          geojsonChecksum: null,
+          sumoVersion: null,
+          edgeCount: 0,
+          laneCount: 0,
+          junctionCount: 0,
+          cacheHit: false,
+          message: "queued",
+          warnings: [],
+        }),
+        { status: 202 },
+      ),
+    );
+    await expect(
+      createNetwork(
+        {
+          name: "test-aoi",
+          bbox: { west: 120.1, south: 22.9, east: 120.11, north: 22.91 },
+          drivingSide: "left",
+        },
+        fetcher,
+      ),
+    ).resolves.toMatchObject({ networkId: "net-test", drivingSide: "left" });
+  });
+
+  it("wraps generated run requests with the selected network id", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          runId: "run-1",
+          status: "queued",
+          scenario: { name: "Baseline", duration: 30 },
+          scenarioChecksum: "abc",
+          networkId: "net-test",
+          networkName: "test-aoi",
+          networkChecksum: "def",
+          networkBbox: { west: 120.1, south: 22.9, east: 120.11, north: 22.91 },
+          drivingSide: "right",
+          createdAt: "2026-09-02T00:00:00Z",
+          updatedAt: "2026-09-02T00:00:00Z",
+          message: null,
+        }),
+        { status: 202 },
+      ),
+    );
+    await createRun({ duration: 30 }, "net-test", fetcher);
+    const init = fetcher.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({
+      networkId: "net-test",
+      scenario: { duration: 30 },
+    });
   });
 });
 

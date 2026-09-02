@@ -7,12 +7,15 @@ uncalibrated** and must not be used for operational road-safety decisions.
 ## Architecture
 
 Portable Python scripts manage a repository-root virtual environment and the local SUMO,
-FastAPI and Vite processes. Generated source data, networks, demand and runs are separated
-under `data/`. Completed runs are converted from SUMO XML into compact JSON before Cesium
-playback. There are no containers, virtual machines, databases, cloud services or private
-Cesium ion tokens. A Mapbox token is optional for the Mapbox 3D Buildings basemap.
+FastAPI and Vite processes. The dashboard can build a small OpenStreetMap AOI anywhere in
+the world, register that SUMO network under `data/networks/{network_id}`, and run scenarios
+against the selected `networkId`. Completed runs are converted from SUMO XML into compact
+JSON before Cesium playback. There are no containers, virtual machines, databases, cloud
+services or private Cesium ion tokens. A Mapbox token is optional for the Mapbox 3D
+Buildings basemap.
 
 For a practical map of the codebase, see [Code structure guide](docs/code-structure.md).
+For the global AOI workflow, see [Global AOI networks](docs/global-aoi.md).
 For a plain-language explanation of the updated dashboard data, see
 [Dashboard data guide](DASHBOARD_DATA_GUIDE.md).
 For saved external map references, see [Reference links](docs/reference-links.md).
@@ -64,7 +67,7 @@ python scripts/export_static_site_data.py
                              export the newest completed run for GitHub Pages playback
 python scripts/export_run.py RUN_ID
                              export a completed run archive
-python -m pipeline.entrypoint network  download/cache OSM and build/validate the network
+python -m pipeline.entrypoint network  build/register an AOI SUMO network
 python -m pipeline.entrypoint demand   generate deterministic routed baseline demand
 python -m pipeline.entrypoint run      execute a baseline run through libsumo
 ```
@@ -89,16 +92,25 @@ On Windows, every delivery task is available without Make:
 
 ## Configuration
 
-The default 0.06 km² extent covers Daxue Road and Shengli Road beside National Cheng Kung
-University in Tainan. Edit `config/default.yaml` or `.env` for supported overrides. Default
-services bind only to `127.0.0.1`; change `API_PORT` and `WEB_PORT` in `.env` if required.
+`config/default.yaml` still contains a small NCKU/Tainan bbox, but it is now only the
+fallback/sample AOI for scripts and first-time setup. In the localhost dashboard, use the
+`Study area` panel to enter a bbox, copy the current Cesium view, choose right- or left-hand
+driving, and build an explicit network before running generated scenarios. AOI limits in
+`config/default.yaml` guard against accidental city-scale downloads.
 
-The default dashboard basemap uses the NLSC Taiwan `EMAP` WMTS service. Optional
-OpenStreetMap/CARTO/Esri basemaps remain available in the basemap picker for visual
-comparison; each layer keeps its own attribution in Cesium. The `Mapbox 3D Buildings`
-basemap uses Mapbox Streets imagery and decodes the Mapbox Streets v8 `building` vector-tile
-layer into Cesium extruded polygons around the active SUMO network. To enable it, set
-`VITE_MAPBOX_TOKEN` in local `.env`; do not commit real tokens.
+Registered AOI networks live under `data/networks/{network_id}` with `source.osm.xml`,
+`network.net.xml`, `network.geojson`, `network.metadata.json` and `source-reference.json`.
+The older `data/network/` path remains as a compatibility cache for legacy demo/import
+flows.
+
+The default dashboard basemap is global CARTO Dark. NLSC Taiwan remains an optional
+basemap, not a global default. The `Mapbox 3D Buildings` basemap uses Mapbox Streets
+imagery and decodes the Mapbox Streets v8 `building` vector-tile layer into Cesium
+extruded polygons around the active SUMO network. To enable it, set `VITE_MAPBOX_TOKEN` in
+local `.env`; do not commit real tokens.
+
+Default services bind only to `127.0.0.1`; change `API_PORT` and `WEB_PORT` in `.env` if
+required.
 
 ## GitHub Pages
 
@@ -176,9 +188,18 @@ recorded for later performance work; it does not prevent local startup.
 
 The direct OSM API download is guarded to the configured small bounding box, cached by
 source and extent checksum, and attributed to OpenStreetMap contributors. `netconvert`
-clips imported roads to the geographic boundary, retains UTM projection metadata and
-keeps passenger edges. Outputs include the `.net.xml`, GeoJSON, metadata and conversion
-log under `data/network/`. Repeat runs reuse both the download and converted network.
+clips imported roads to the geographic boundary, retains UTM projection metadata and keeps
+passenger edges. Outputs are registered under `data/networks/{network_id}/`; repeat runs
+reuse both the download and converted network.
+
+To build a manual AOI from the CLI, pass all bbox values together:
+
+```powershell
+.\.venv\Scripts\python.exe -m pipeline.entrypoint network --name my-aoi --west 120.20 --south 22.99 --east 120.22 --north 23.00 --driving-side right
+```
+
+For left-hand traffic countries, use `--driving-side left`; the network builder passes
+SUMO netconvert's documented `--lefthand` option.
 
 On the verified NCKU extent SUMO 1.27.1 produced 16 passenger edges, 16 lanes and nine
 junction nodes. Conversion warnings are retained in metadata; they include incomplete OSM
@@ -187,11 +208,12 @@ network has not been manually validated.
 
 ## Baseline simulations
 
-`POST /api/runs` validates a camelCase scenario, returns a queued run with HTTP 202 and
-executes it through a single in-process worker. This serialises libsumo's process-global
-state. Poll `/api/runs/{runId}/status`, then retrieve `/summary`. Runs survive API restarts;
-an interrupted job becomes failed with a recoverable diagnostic. Queued, completed and
-failed runs can be deleted, while active runs return HTTP 409.
+`POST /api/runs` now accepts `{ "networkId": "...", "scenario": { ... } }`, returns a
+queued run with HTTP 202 and executes it through a single in-process worker. The legacy raw
+scenario payload is still accepted for compatibility and falls back to the latest registered
+or legacy network. Poll `/api/runs/{runId}/status`, then retrieve `/summary`. Runs survive
+API restarts; an interrupted job becomes failed with a recoverable diagnostic. Queued,
+completed and failed runs can be deleted, while active runs return HTTP 409.
 
 Every run directory preserves the normalized scenario, explicit vehicle type, trips,
 routes, SUMO configuration, FCD/trip/collision/statistics output, SUMO log, compact summary,
@@ -250,12 +272,13 @@ produced byte-identical summaries.
 
 ## Dashboard workflow
 
-The framework-free dashboard now supports the complete local workflow: choose a preset,
-edit supported demand, TTC and behavioural assumptions, reset or validate them, submit a
-run, observe queued/preparing/running/processing states and load the completed results.
-Summary cards, newest-versus-previous comparison, TTC timeline, selected-vehicle
-speed/acceleration trace, safety table and previous/next event controls all use the same
-playback clock. Advanced assumptions remain collapsed by default.
+The framework-free dashboard now supports the complete local workflow: choose a study-area
+AOI, build/reuse its SUMO network, choose a preset, edit supported demand, TTC and
+behavioural assumptions, reset or validate them, submit a run for the selected `networkId`,
+observe queued/preparing/running/processing states and load the completed results. Summary
+cards, newest-versus-previous comparison, TTC timeline, selected-vehicle speed/acceleration
+trace, safety table and previous/next event controls all use the same playback clock.
+Advanced assumptions remain collapsed by default.
 
 ## Demo runs and archives
 

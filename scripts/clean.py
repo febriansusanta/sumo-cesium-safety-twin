@@ -13,7 +13,7 @@ from scripts.platform import ROOT
 TARGETS = {
     "temporary": [ROOT / "data/cache"],
     "demand": [ROOT / "data/demand"],
-    "network": [ROOT / "data/network", ROOT / "data/raw"],
+    "network": [ROOT / "data/network", ROOT / "data/networks", ROOT / "data/raw"],
     "runs": [ROOT / "data/runs"],
 }
 

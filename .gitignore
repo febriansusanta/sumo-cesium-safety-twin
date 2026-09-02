@@ -10,6 +10,7 @@ web/dist/
 web/coverage/
 data/raw/*
 data/network/*
+data/networks/*
 data/demand/*
 data/runs/*
 data/cache/*

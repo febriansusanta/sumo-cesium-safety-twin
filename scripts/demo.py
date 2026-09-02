@@ -11,10 +11,12 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 
 from app.config import REPO_ROOT, get_settings
+from app.models.network import NetworkBuildRequest
 from app.models.scenario import ScenarioConfig
 from app.services.archive_service import create_run_archive
 from app.services.checksum_service import file_checksum
-from app.services.network_service import build_network, latest_network
+from app.services.network_registry_service import NetworkRegistry
+from app.services.network_service import build_network
 from app.services.osm_service import download_osm
 from app.services.preset_service import load_presets
 from app.services.simulation_service import execute_run
@@ -22,9 +24,31 @@ from app.services.simulation_service import execute_run
 
 def main() -> int:
     settings = get_settings()
-    network = latest_network(settings)
-    if network is None:
-        network = build_network(settings, download_osm(settings).path).network_path
+    registry = NetworkRegistry(settings)
+    metadata = registry.latest_ready() or registry.register_legacy_latest()
+    if metadata is None:
+        request = NetworkBuildRequest(name=settings.location.name, bbox=settings.location.bbox)
+        network_id = registry.network_id_for(request)
+        location = registry.location_for(request)
+        directory = registry.network_path(network_id).parent
+        registry.write_request(network_id, request)
+        osm = download_osm(
+            settings,
+            location=location,
+            destination_dir=directory,
+            filename_stem="source",
+        )
+        artifact = build_network(
+            settings,
+            osm.path,
+            location=location,
+            destination_dir=directory,
+            output_stem="network",
+        )
+        metadata = registry.metadata_from_artifacts(network_id, request, osm, artifact)
+        registry.write_source_reference(network_id, request, osm, artifact)
+        registry.write(metadata)
+    network = registry.network_path(metadata.network_id)
     presets = {
         item["id"]: item for item in load_presets(REPO_ROOT / "scenarios/presets")
     }
