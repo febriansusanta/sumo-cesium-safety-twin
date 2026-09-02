@@ -3,7 +3,6 @@ import "./styles/main.css";
 import * as Cesium from "cesium";
 import {
   fetchHealth,
-  fetchBuildings,
   fetchDemoRuns,
   fetchNetwork,
   fetchPresets,
@@ -20,19 +19,23 @@ import {
   validateScenario,
   loadDemoRun,
 } from "./api";
-import type { Preset, SafetyEvent, Trajectory } from "./api";
+import type { NetworkGeoJson, Preset, SafetyEvent, Trajectory } from "./api";
 import { renderTtcChart } from "./charts/ttc-chart";
 import { renderVehicleChart } from "./charts/vehicle-chart";
-import { renderBuildings } from "./cesium/buildings";
 import { EVENT_COLORS, humanizeEventType, renderSafetyEvents } from "./cesium/events";
+import {
+  loadMapboxBuildings,
+  type MapboxBuildingLayer,
+} from "./cesium/mapbox-buildings";
 import { renderNetwork } from "./cesium/network";
 import { renderPointOverlays } from "./cesium/point-overlays";
 import { highlightVehicle, renderVehicles } from "./cesium/vehicles";
 import {
   BASEMAPS,
   DEFAULT_BASEMAP_ID,
-  basemapShowsBuildings,
+  basemapUsesMapboxBuildings,
   createViewer,
+  getMapboxToken,
   setBasemap,
 } from "./cesium/viewer";
 import { PlaybackStore } from "./simulation/playback-store";
@@ -162,12 +165,14 @@ const layerVisibility = {
   vehicles: true,
   events: true,
   network: true,
-  buildings: basemapShowsBuildings(DEFAULT_BASEMAP_ID),
+  buildings: basemapUsesMapboxBuildings(DEFAULT_BASEMAP_ID),
   realPoints: true,
   sumoPoints: true,
 };
 let networkDataSource: Cesium.GeoJsonDataSource | undefined;
-let buildingDataSource: Cesium.GeoJsonDataSource | undefined;
+let currentNetwork: NetworkGeoJson | undefined;
+let mapboxBuildings: MapboxBuildingLayer | undefined;
+let mapboxBuildingLoad: Promise<void> | undefined;
 let realPointEntities: Cesium.Entity[] = [];
 let sumoPointEntities: Cesium.Entity[] = [];
 let loadedTrajectories: Trajectory[] = [];
@@ -188,16 +193,52 @@ function applyLayerVisibility(): void {
   // reads layerVisibility.events, so they are intentionally not set here.
   for (const entity of vehicleEntities.values()) entity.show = layerVisibility.vehicles;
   if (networkDataSource) networkDataSource.show = layerVisibility.network;
-  if (buildingDataSource) buildingDataSource.show = layerVisibility.buildings;
+  if (mapboxBuildings) {
+    for (const entity of mapboxBuildings.entities) entity.show = layerVisibility.buildings;
+  }
   for (const entity of realPointEntities) entity.show = layerVisibility.realPoints;
   for (const entity of sumoPointEntities) entity.show = layerVisibility.sumoPoints;
 }
 
+async function ensureMapboxBuildings(): Promise<void> {
+  if (!layerVisibility.buildings || mapboxBuildings || mapboxBuildingLoad || !currentNetwork) return;
+  const token = getMapboxToken();
+  if (!token) {
+    buildingFeatureCount = 0;
+    updateNetworkStatus();
+    if (validationOutput) {
+      validationOutput.value = "Mapbox 3D Buildings requires VITE_MAPBOX_TOKEN in .env";
+    }
+    return;
+  }
+  mapboxBuildingLoad = loadMapboxBuildings(viewer, currentNetwork, token)
+    .then((layer) => {
+      mapboxBuildings = layer;
+      buildingFeatureCount = layer.featureCount;
+      applyLayerVisibility();
+      updateNetworkStatus();
+    })
+    .catch((error: unknown) => {
+      buildingFeatureCount = 0;
+      updateNetworkStatus();
+      if (validationOutput) {
+        validationOutput.value =
+          error instanceof Error ? error.message : "Mapbox buildings unavailable";
+      }
+      console.warn(error instanceof Error ? error.message : "Mapbox buildings unavailable");
+    })
+    .finally(() => {
+      mapboxBuildingLoad = undefined;
+    });
+  await mapboxBuildingLoad;
+}
+
 function applyBasemapSelection(id: string): void {
   setBasemap(viewer, id);
-  layerVisibility.buildings = basemapShowsBuildings(id);
+  layerVisibility.buildings = basemapUsesMapboxBuildings(id);
   updateBuildingLegend();
   applyLayerVisibility();
+  void ensureMapboxBuildings();
 }
 
 function bindLayerToggle(id: string, key: keyof typeof layerVisibility): void {
@@ -272,31 +313,22 @@ function updateNetworkStatus(): void {
   networkStatus.textContent =
     buildingFeatureCount === undefined
       ? `${mappedFeatureCount} mapped features`
-      : `${mappedFeatureCount} mapped features, ${buildingFeatureCount} buildings`;
+      : `${mappedFeatureCount} mapped features, ${buildingFeatureCount} Mapbox buildings`;
 }
 
 void fetchNetwork()
   .then(async (network) => {
+    currentNetwork = network;
     networkDataSource = await renderNetwork(viewer, network);
     applyLayerVisibility();
     mappedFeatureCount = network.features.length;
     updateNetworkStatus();
+    void ensureMapboxBuildings();
   })
   .catch((error: unknown) => {
     if (networkStatus) {
       networkStatus.textContent = error instanceof Error ? error.message : "Network unavailable";
     }
-  });
-
-void fetchBuildings()
-  .then(async (buildings) => {
-    buildingDataSource = await renderBuildings(viewer, buildings);
-    applyLayerVisibility();
-    buildingFeatureCount = buildings.features.length;
-    updateNetworkStatus();
-  })
-  .catch((error: unknown) => {
-    console.warn(error instanceof Error ? error.message : "Building layer unavailable");
   });
 
 const pointStatus = document.querySelector<HTMLElement>("#point-status");

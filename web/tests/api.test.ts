@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  fetchBuildings,
   fetchHealth,
   fetchNetwork,
   fetchPointOverlays,
@@ -31,30 +30,6 @@ describe("fetchNetwork", () => {
       new Response(JSON.stringify({ type: "FeatureCollection", features: [] }), { status: 200 }),
     );
     await expect(fetchNetwork(fetcher)).resolves.toMatchObject({ type: "FeatureCollection" });
-  });
-});
-
-describe("fetchBuildings", () => {
-  it("accepts a building GeoJSON feature collection", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          type: "FeatureCollection",
-          metadata: { source: "generated-context" },
-          features: [
-            {
-              type: "Feature",
-              properties: { featureType: "building", height: 12 },
-              geometry: { type: "Polygon", coordinates: [] },
-            },
-          ],
-        }),
-        { status: 200 },
-      ),
-    );
-    await expect(fetchBuildings(fetcher)).resolves.toMatchObject({
-      type: "FeatureCollection",
-    });
   });
 });
 

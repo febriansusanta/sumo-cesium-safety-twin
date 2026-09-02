@@ -10,7 +10,7 @@ Portable Python scripts manage a repository-root virtual environment and the loc
 FastAPI and Vite processes. Generated source data, networks, demand and runs are separated
 under `data/`. Completed runs are converted from SUMO XML into compact JSON before Cesium
 playback. There are no containers, virtual machines, databases, cloud services or private
-map tokens.
+Cesium ion tokens. A Mapbox token is optional for the Mapbox 3D Buildings basemap.
 
 For a practical map of the codebase, see [Code structure guide](docs/code-structure.md).
 For a plain-language explanation of the updated dashboard data, see
@@ -93,10 +93,10 @@ services bind only to `127.0.0.1`; change `API_PORT` and `WEB_PORT` in `.env` if
 
 The default dashboard basemap uses the NLSC Taiwan `EMAP` WMTS service. Optional
 OpenStreetMap/CARTO/Esri basemaps remain available in the basemap picker for visual
-comparison; each layer keeps its own attribution in Cesium.
-The basemap picker also includes an optional `NLSC + 3D Buildings` mode. OSM building
-footprints are used when available; otherwise the API generates deterministic visual blocks
-from the active network bounds.
+comparison; each layer keeps its own attribution in Cesium. The `Mapbox 3D Buildings`
+basemap uses Mapbox Streets imagery and decodes the Mapbox Streets v8 `building` vector-tile
+layer into Cesium extruded polygons around the active SUMO network. To enable it, set
+`VITE_MAPBOX_TOKEN` in local `.env`; do not commit real tokens.
 
 ## Using the local Data folder
 

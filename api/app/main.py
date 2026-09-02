@@ -16,7 +16,6 @@ from .jobs import RunConflictError, RunManager, load_summary
 from .models.run import RunMetadata
 from .models.scenario import ScenarioConfig
 from .services.archive_service import ArchiveError, create_run_archive, import_run_archive
-from .services.building_service import BuildingLayerError, load_or_create_buildings
 from .services.local_data_service import (
     LocalDataImportError,
     discover_local_datasets,
@@ -95,14 +94,6 @@ def network() -> dict[str, object]:
     if path is None:
         raise HTTPException(status_code=404, detail="Network has not been prepared")
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-@app.get("/api/buildings", tags=["network"])
-def buildings() -> dict[str, object]:
-    try:
-        return load_or_create_buildings(get_settings())
-    except BuildingLayerError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @app.get("/api/point-overlays", tags=["network"])

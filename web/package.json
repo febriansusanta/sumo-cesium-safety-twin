@@ -11,7 +11,9 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
     "cesium": "1.143.0",
+    "pbf": "^5.1.2",
     "zod": "4.4.3"
   },
   "devDependencies": {

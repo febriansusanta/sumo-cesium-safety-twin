@@ -106,7 +106,7 @@ For the current imported Nanke run:
 | Visual Item | Meaning |
 | --- | --- |
 | Cyan road lines | SUMO road/lane network converted from the local `.net.xml`. |
-| Gray extruded blocks | Optional `NLSC + 3D Buildings` basemap mode. OSM building footprints are used when available; otherwise these are generated visual context blocks around the network bounds. |
+| Light extruded blocks | Optional `Mapbox 3D Buildings` basemap mode. The dashboard requests Mapbox Streets v8 building vector tiles near the active SUMO network and renders them as Cesium extruded polygons. |
 | Pink circles | Real/observed point data from `Data/sumo/real_point.shp`. |
 | Blue circles | SUMO-derived point data from `Data/sumo/sumo_point.shp`. |
 | Cyan moving rectangles/points | Vehicles from `fcd.xml`. |
@@ -116,8 +116,8 @@ For the current imported Nanke run:
 | Locate button | Moves the map and playback time to the selected safety event. |
 
 The map uses CesiumJS for spatial visualization. It does not need a private Cesium ion token.
-The 3D building basemap mode is visual context only and is not used in the TTC, braking or
-collision calculations.
+The Mapbox 3D building mode requires `VITE_MAPBOX_TOKEN` in local `.env`. These buildings
+are visual context only and are not used in the TTC, braking or collision calculations.
 
 ## How To Read TTC And Safety Events
 

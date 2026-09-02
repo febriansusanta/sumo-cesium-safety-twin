@@ -14,11 +14,9 @@ const geoJsonFeatureCollectionSchema = z.object({
 }).passthrough();
 
 const networkSchema = geoJsonFeatureCollectionSchema;
-const buildingSchema = geoJsonFeatureCollectionSchema;
 const pointOverlaySchema = geoJsonFeatureCollectionSchema;
 
 export type NetworkGeoJson = z.infer<typeof networkSchema>;
-export type BuildingGeoJson = z.infer<typeof buildingSchema>;
 export type PointOverlayGeoJson = z.infer<typeof pointOverlaySchema>;
 
 const runSchema = z.object({
@@ -152,12 +150,6 @@ export async function fetchNetwork(fetcher: typeof fetch = fetch): Promise<Netwo
   const response = await fetcher("/api/network");
   if (!response.ok) throw new Error(`Network request failed (${response.status})`);
   return networkSchema.parse(await response.json());
-}
-
-export async function fetchBuildings(fetcher: typeof fetch = fetch): Promise<BuildingGeoJson> {
-  const response = await fetcher("/api/buildings");
-  if (!response.ok) throw new Error(`Building request failed (${response.status})`);
-  return buildingSchema.parse(await response.json());
 }
 
 export async function fetchPointOverlays(

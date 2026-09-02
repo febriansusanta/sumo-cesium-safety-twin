@@ -53,7 +53,6 @@ The backend is a FastAPI app in `api/app/`.
 | --- | --- |
 | `osm_service.py` | Downloads and caches OSM XML for a small configured bounding box. |
 | `network_service.py` | Runs `netconvert`, validates SUMO networks and exports network GeoJSON for Cesium. |
-| `building_service.py` | Serves 3D building GeoJSON from OSM footprints when available, or deterministic visual context blocks around the active network. |
 | `point_overlay_service.py` | Reads local WGS84 point shapefiles from `Data/sumo` and serves real/SUMO comparison points as GeoJSON. |
 | `demand_service.py` | Runs `randomTrips.py` and routing tools to create synthetic vehicle demand. |
 | `simulation_service.py` | Runs SUMO through `libsumo`, writes FCD, tripinfo, collision and SSM outputs, then creates summary JSON. |
@@ -75,7 +74,7 @@ The frontend is a framework-free TypeScript app in `web/src/`.
 | `web/src/api.ts` | Typed API client. It uses Zod schemas to validate JSON received from FastAPI. |
 | `web/src/cesium/viewer.ts` | Creates the Cesium viewer and basemap options. |
 | `web/src/cesium/network.ts` | Renders road/lane GeoJSON into Cesium. |
-| `web/src/cesium/buildings.ts` | Renders building GeoJSON as extruded Cesium polygons. |
+| `web/src/cesium/mapbox-buildings.ts` | Fetches Mapbox Streets v8 building vector tiles near the active network and renders them as Cesium extruded polygons. |
 | `web/src/cesium/point-overlays.ts` | Renders observed and SUMO-derived point shapefile overlays as Cesium markers. |
 | `web/src/cesium/vehicles.ts` | Creates and updates vehicle entities from trajectory samples. |
 | `web/src/cesium/events.ts` | Renders TTC, braking and collision markers. |
@@ -146,7 +145,6 @@ Typical files inside a run directory:
 | `GET /api/config` | Read public project defaults and capabilities. |
 | `GET /api/environment` | Read detected local tool versions and simulation mode. |
 | `GET /api/network` | Load the prepared network GeoJSON. |
-| `GET /api/buildings` | Load the 3D building context layer for Cesium. |
 | `GET /api/point-overlays` | Load local `real_point` and `sumo_point` shapefile overlays from `Data/sumo`. |
 | `GET /api/scenarios/presets` | Load scenario presets. |
 | `POST /api/scenarios/validate` | Validate scenario settings without running SUMO. |
@@ -223,6 +221,7 @@ Typical files inside a run directory:
 | Local data import | `api/tests/test_local_data_service.py` |
 | FCD and safety parsing | `api/tests/test_result_service.py`, `api/tests/test_safety_service.py` |
 | Frontend API client | `web/tests/api.test.ts` |
+| Basemap and Mapbox building helpers | `web/tests/basemap.test.ts`, `web/tests/mapbox-buildings.test.ts` |
 | Playback logic | `web/tests/playback-store.test.ts` |
 | Vehicle rendering performance logic | `web/tests/vehicle-performance.test.ts` |
 

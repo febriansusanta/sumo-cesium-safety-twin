@@ -1,5 +1,6 @@
 import {
   Cartesian3,
+  Credit,
   EllipsoidTerrainProvider,
   type ImageryProvider,
   OpenStreetMapImageryProvider,
@@ -12,41 +13,62 @@ const NCKU_VIEW = { longitude: 120.2184, latitude: 22.9962 };
 const TAIWAN_BASEMAP_RECTANGLE = Rectangle.fromDegrees(118, 20, 123, 26.8);
 const NLSC_EMAP_TILE_URL =
   "https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}";
+const MAPBOX_STREETS_TILE_URL =
+  "https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/512/{z}/{x}/{y}?access_token={token}";
+
+export const MAPBOX_3D_BUILDINGS_BASEMAP_ID = "mapbox-3d-buildings";
 
 export interface BasemapOption {
   id: string;
   label: string;
   createProvider: () => ImageryProvider;
-  showBuildings?: boolean;
+  buildingSource?: "mapbox";
+}
+
+export function getMapboxToken(): string {
+  return import.meta.env.VITE_MAPBOX_TOKEN?.trim() ?? "";
+}
+
+export function mapboxTokenConfigured(): boolean {
+  return getMapboxToken().length > 0;
+}
+
+function createNlscProvider(): ImageryProvider {
+  return new UrlTemplateImageryProvider({
+    url: NLSC_EMAP_TILE_URL,
+    credit: "National Land Surveying and Mapping Center, Taiwan",
+    maximumLevel: 19,
+    rectangle: TAIWAN_BASEMAP_RECTANGLE,
+  });
+}
+
+function createMapboxStreetsProvider(): ImageryProvider {
+  const token = getMapboxToken();
+  if (!token) return createNlscProvider();
+  return new UrlTemplateImageryProvider({
+    url: MAPBOX_STREETS_TILE_URL.replace("{token}", encodeURIComponent(token)),
+    credit: new Credit("Mapbox, OpenStreetMap"),
+    tileWidth: 512,
+    tileHeight: 512,
+    maximumLevel: 22,
+  });
 }
 
 /**
- * Token-free basemaps. NLSC Taiwan e-Map is the default local context layer;
- * the other layers stay available for contrast and visual checks.
+ * Public basemaps for Cesium. The Mapbox option also enables a separate
+ * Mapbox Streets vector-tile building layer in the dashboard.
  */
 export const BASEMAPS: BasemapOption[] = [
   {
     id: "nlsc",
     label: "NLSC Taiwan",
-    createProvider: () =>
-      new UrlTemplateImageryProvider({
-        url: NLSC_EMAP_TILE_URL,
-        credit: "National Land Surveying and Mapping Center, Taiwan",
-        maximumLevel: 19,
-        rectangle: TAIWAN_BASEMAP_RECTANGLE,
-      }),
+    createProvider: createNlscProvider,
   },
   {
-    id: "nlsc-buildings",
-    label: "NLSC + 3D Buildings",
-    showBuildings: true,
-    createProvider: () =>
-      new UrlTemplateImageryProvider({
-        url: NLSC_EMAP_TILE_URL,
-        credit: "National Land Surveying and Mapping Center, Taiwan",
-        maximumLevel: 19,
-        rectangle: TAIWAN_BASEMAP_RECTANGLE,
-      }),
+    id: MAPBOX_3D_BUILDINGS_BASEMAP_ID,
+    label: "Mapbox 3D Buildings",
+    buildingSource: "mapbox",
+    createProvider: createMapboxStreetsProvider,
   },
   {
     id: "dark",
@@ -55,7 +77,7 @@ export const BASEMAPS: BasemapOption[] = [
       new UrlTemplateImageryProvider({
         url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
         subdomains: "abcd",
-        credit: "© OpenStreetMap contributors © CARTO",
+        credit: "OpenStreetMap contributors, CARTO",
         maximumLevel: 20,
       }),
   },
@@ -66,7 +88,7 @@ export const BASEMAPS: BasemapOption[] = [
       new UrlTemplateImageryProvider({
         url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
         subdomains: "abcd",
-        credit: "© OpenStreetMap contributors © CARTO",
+        credit: "OpenStreetMap contributors, CARTO",
         maximumLevel: 20,
       }),
   },
@@ -76,7 +98,7 @@ export const BASEMAPS: BasemapOption[] = [
     createProvider: () =>
       new OpenStreetMapImageryProvider({
         url: "https://tile.openstreetmap.org/",
-        credit: "© OpenStreetMap contributors",
+        credit: "OpenStreetMap contributors",
       }),
   },
   {
@@ -85,7 +107,7 @@ export const BASEMAPS: BasemapOption[] = [
     createProvider: () =>
       new UrlTemplateImageryProvider({
         url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        credit: "Imagery © Esri, Maxar, Earthstar Geographics",
+        credit: "Imagery: Esri, Maxar, Earthstar Geographics",
         maximumLevel: 19,
       }),
   },
@@ -93,9 +115,9 @@ export const BASEMAPS: BasemapOption[] = [
 
 export const DEFAULT_BASEMAP_ID = "nlsc";
 
-export function basemapShowsBuildings(id: string): boolean {
+export function basemapUsesMapboxBuildings(id: string): boolean {
   const option = BASEMAPS.find((basemap) => basemap.id === id) ?? BASEMAPS[0]!;
-  return option.showBuildings === true;
+  return option.buildingSource === "mapbox";
 }
 
 /**
