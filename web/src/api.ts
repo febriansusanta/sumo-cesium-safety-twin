@@ -8,12 +8,16 @@ const healthSchema = z.object({
 
 export type Health = z.infer<typeof healthSchema>;
 
-const networkSchema = z.object({
+const geoJsonFeatureCollectionSchema = z.object({
   type: z.literal("FeatureCollection"),
   features: z.array(z.object({ type: z.literal("Feature") }).passthrough()),
-});
+}).passthrough();
+
+const networkSchema = geoJsonFeatureCollectionSchema;
+const buildingSchema = geoJsonFeatureCollectionSchema;
 
 export type NetworkGeoJson = z.infer<typeof networkSchema>;
+export type BuildingGeoJson = z.infer<typeof buildingSchema>;
 
 const runSchema = z.object({
   runId: z.string(),
@@ -146,6 +150,12 @@ export async function fetchNetwork(fetcher: typeof fetch = fetch): Promise<Netwo
   const response = await fetcher("/api/network");
   if (!response.ok) throw new Error(`Network request failed (${response.status})`);
   return networkSchema.parse(await response.json());
+}
+
+export async function fetchBuildings(fetcher: typeof fetch = fetch): Promise<BuildingGeoJson> {
+  const response = await fetcher("/api/buildings");
+  if (!response.ok) throw new Error(`Building request failed (${response.status})`);
+  return buildingSchema.parse(await response.json());
 }
 
 export async function fetchRuns(fetcher: typeof fetch = fetch): Promise<Run[]> {

@@ -94,6 +94,9 @@ services bind only to `127.0.0.1`; change `API_PORT` and `WEB_PORT` in `.env` if
 The default dashboard basemap uses the NLSC Taiwan `EMAP` WMTS service. Optional
 OpenStreetMap/CARTO/Esri basemaps remain available in the basemap picker for visual
 comparison; each layer keeps its own attribution in Cesium.
+The dashboard also includes a token-free 3D building context layer. OSM building footprints
+are used when available; otherwise the API generates deterministic visual blocks from the
+active network bounds.
 
 ## Using the local Data folder
 

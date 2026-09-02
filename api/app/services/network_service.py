@@ -180,7 +180,12 @@ def build_network(settings: Settings, osm_path: Path, *, force: bool = False) ->
 
 def latest_geojson(settings: Settings) -> Path | None:
     candidates = sorted(
-        (settings.data_dir / "network").glob("*.geojson"), key=lambda p: p.stat().st_mtime
+        (
+            path
+            for path in (settings.data_dir / "network").glob("*.geojson")
+            if not path.name.endswith(".buildings.geojson")
+        ),
+        key=lambda p: p.stat().st_mtime,
     )
     return candidates[-1] if candidates else None
 

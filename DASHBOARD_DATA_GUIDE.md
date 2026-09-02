@@ -35,7 +35,7 @@ The screen has three main areas:
 | Area | What Users See | What It Means |
 | --- | --- | --- |
 | Left panel | Scenario controls, location, network count and loaded run | Which run is loaded and whether it came from local data or a generated scenario. |
-| Center map | Cesium map with roads, vehicles and event markers | Spatial playback of the SUMO run. This is where users inspect vehicle movement and event locations. |
+| Center map | Cesium map with roads, 3D buildings, vehicles and event markers | Spatial playback of the SUMO run. This is where users inspect vehicle movement and event locations. |
 | Right panel | Summary metrics, TTC chart, safety-event table and selected vehicle chart | Numerical interpretation of the loaded run. |
 
 The dashboard is for completed-run playback. It is not a live traffic feed.
@@ -96,6 +96,7 @@ For the current imported Nanke run:
 | Visual Item | Meaning |
 | --- | --- |
 | Cyan road lines | SUMO road/lane network converted from the local `.net.xml`. |
+| Gray extruded blocks | 3D building context. OSM building footprints are used when available; otherwise these are generated visual context blocks around the network bounds. |
 | Cyan moving rectangles/points | Vehicles from `fcd.xml`. |
 | Orange/yellow markers | Warning-level safety events. |
 | Red markers | Critical-level safety events. |
@@ -103,6 +104,8 @@ For the current imported Nanke run:
 | Locate button | Moves the map and playback time to the selected safety event. |
 
 The map uses CesiumJS for spatial visualization. It does not need a private Cesium ion token.
+The building layer is visual context only and is not used in the TTC, braking or collision
+calculations.
 
 ## How To Read TTC And Safety Events
 

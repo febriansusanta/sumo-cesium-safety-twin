@@ -120,6 +120,7 @@ td button { width: auto; margin: 0; padding: .25rem .4rem; font-size: .7rem; }
 .lg-warning::before { width: 0; height: 0; margin-right: .4rem; border-left: .45rem solid transparent; border-right: .45rem solid transparent; border-bottom: .78rem solid #f1b65b; border-radius: 0; }
 .lg-critical::before { width: 0; height: 0; margin-right: .4rem; border-left: .45rem solid transparent; border-right: .45rem solid transparent; border-bottom: .78rem solid #ff5c52; border-radius: 0; }
 .lg-network::before { height: 3px; border-radius: 2px; background: #51c7da; }
+.lg-building::before { background: #9aa6a0; border: 1px solid #2d4042; }
 .playback { position: absolute; z-index: 2; left: 1rem; right: 1rem; bottom: 1rem; display: grid; grid-template-columns: auto auto minmax(120px, 1fr) auto auto; gap: .6rem; align-items: center; padding: .65rem; border: 1px solid #31535b; border-radius: 8px; background: rgb(7 16 20 / 92%); }
 .playback button, .playback select { width: auto; margin: 0; padding: .45rem .65rem; }
 .playback output { min-width: 7.5rem; color: #c7dce0; font-variant-numeric: tabular-nums; font-size: .8rem; }
