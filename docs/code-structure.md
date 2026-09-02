@@ -74,6 +74,7 @@ The frontend is a framework-free TypeScript app in `web/src/`.
 | `web/src/api.ts` | Typed API client. It uses Zod schemas to validate JSON received from FastAPI. |
 | `web/src/cesium/viewer.ts` | Creates the Cesium viewer and basemap options. |
 | `web/src/cesium/network.ts` | Renders road/lane GeoJSON into Cesium. |
+| `web/src/cesium/low-poly-car.ts` | Generates the self-contained low-poly car glTF used for vehicle playback. |
 | `web/src/cesium/mapbox-buildings.ts` | Fetches Mapbox Streets v8 building vector tiles near the active network and renders them as Cesium extruded polygons. |
 | `web/src/cesium/point-overlays.ts` | Renders observed and SUMO-derived point shapefile overlays as Cesium markers. |
 | `web/src/cesium/vehicles.ts` | Creates and updates vehicle entities from trajectory samples. |
@@ -221,7 +222,7 @@ Typical files inside a run directory:
 | Local data import | `api/tests/test_local_data_service.py` |
 | FCD and safety parsing | `api/tests/test_result_service.py`, `api/tests/test_safety_service.py` |
 | Frontend API client | `web/tests/api.test.ts` |
-| Basemap and Mapbox building helpers | `web/tests/basemap.test.ts`, `web/tests/mapbox-buildings.test.ts` |
+| Basemap, Mapbox building and low-poly car helpers | `web/tests/basemap.test.ts`, `web/tests/mapbox-buildings.test.ts`, `web/tests/low-poly-car.test.ts` |
 | Playback logic | `web/tests/playback-store.test.ts` |
 | Vehicle rendering performance logic | `web/tests/vehicle-performance.test.ts` |
 

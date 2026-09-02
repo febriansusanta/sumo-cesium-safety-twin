@@ -3,24 +3,23 @@ import {
   CallbackProperty,
   Cartesian3,
   Color,
-  ColorMaterialProperty,
+  ColorBlendMode,
+  ConstantProperty,
   Entity,
   HeadingPitchRoll,
   Math as CesiumMath,
+  ShadowMode,
   Transforms,
   Viewer,
 } from "cesium";
 import type { Trajectory } from "../api";
 import type { PlaybackStore } from "../simulation/playback-store";
+import { lowPolyCarModelUri } from "./low-poly-car";
 
-const CAR_LENGTH = 4.6;
-const CAR_WIDTH = 2.0;
-const CAR_HEIGHT = 1.5;
+const CAR_GROUND_CLEARANCE = 0.08;
 
 export const VEHICLE_COLOR = "#38bdf8";
 export const VEHICLE_HIGHLIGHT_COLOR = "#facc15";
-
-const CAR_DIMENSIONS = new Cartesian3(CAR_LENGTH, CAR_WIDTH, CAR_HEIGHT);
 
 export function positionAt(trajectory: Trajectory, time: number): Cartesian3 | undefined {
   const samples = trajectory.samples;
@@ -42,7 +41,7 @@ export function positionAt(trajectory: Trajectory, time: number): Cartesian3 | u
   return Cartesian3.fromDegrees(
     first.longitude + (second.longitude - first.longitude) * ratio,
     first.latitude + (second.latitude - first.latitude) * ratio,
-    CAR_HEIGHT / 2,
+    CAR_GROUND_CLEARANCE,
   );
 }
 
@@ -66,12 +65,16 @@ export function headingAt(trajectory: Trajectory, time: number): number {
   return time - before.t <= after.t - time ? before.angle : after.angle;
 }
 
-/** Highlight or reset a vehicle box when it participates in a selected event. */
+/** Highlight or reset a vehicle model when it participates in a selected event. */
 export function highlightVehicle(entity: Entity, active: boolean): void {
-  if (!entity.box) return;
-  entity.box.material = new ColorMaterialProperty(
-    Color.fromCssColorString(active ? VEHICLE_HIGHLIGHT_COLOR : VEHICLE_COLOR),
-  );
+  const color = Color.fromCssColorString(active ? VEHICLE_HIGHLIGHT_COLOR : VEHICLE_COLOR);
+  if (entity.model) {
+    entity.model.color = new ConstantProperty(color);
+    entity.model.silhouetteColor = new ConstantProperty(
+      Color.fromCssColorString(active ? VEHICLE_HIGHLIGHT_COLOR : "#071014"),
+    );
+    entity.model.silhouetteSize = new ConstantProperty(active ? 3 : 0);
+  }
 }
 
 export function renderVehicles(
@@ -79,6 +82,7 @@ export function renderVehicles(
   trajectories: Trajectory[],
   playback: PlaybackStore,
 ): Entity[] {
+  const modelUri = lowPolyCarModelUri();
   return trajectories.map((trajectory) =>
     viewer.entities.add({
       id: trajectory.vehicleId,
@@ -90,17 +94,23 @@ export function renderVehicles(
       orientation: new CallbackProperty(() => {
         const position = positionAt(trajectory, playback.value.time);
         if (!position) return undefined;
-        const heading = CesiumMath.toRadians(headingAt(trajectory, playback.value.time) - 90);
+        const heading = CesiumMath.toRadians(headingAt(trajectory, playback.value.time));
         return Transforms.headingPitchRollQuaternion(
           position,
           new HeadingPitchRoll(heading, 0, 0),
         );
       }, false),
-      box: {
-        dimensions: CAR_DIMENSIONS,
-        material: new ColorMaterialProperty(Color.fromCssColorString(VEHICLE_COLOR)),
-        outline: true,
-        outlineColor: Color.fromCssColorString("#071014").withAlpha(0.7),
+      model: {
+        uri: modelUri,
+        scale: 1,
+        minimumPixelSize: 11,
+        maximumScale: 5,
+        shadows: ShadowMode.DISABLED,
+        color: Color.fromCssColorString(VEHICLE_COLOR),
+        colorBlendMode: ColorBlendMode.MIX,
+        colorBlendAmount: 0.16,
+        silhouetteColor: Color.fromCssColorString("#071014"),
+        silhouetteSize: 0,
       },
       properties: { sampleCount: trajectory.samples.length },
     }),

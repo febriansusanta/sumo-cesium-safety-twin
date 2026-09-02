@@ -17,5 +17,6 @@ SSM markers, summary and charts without client request failures.
 
 The practical first-version recommendation is at most 500 simultaneously visible vehicle
 entities. One thousand remains an experimental upper fixture: interpolation is inexpensive,
-but labels, event markers, imagery, hardware and browser composition can dominate. Detailed
-glTF vehicles are deliberately out of scope.
+but model rendering, labels, event markers, imagery, hardware and browser composition can
+dominate. The dashboard uses a very small generated low-poly glTF car; detailed external car
+models remain out of scope.

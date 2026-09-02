@@ -175,9 +175,10 @@ reported. Remaining vehicles are retained as unfinished trip records at the simu
 The result processor streams geographic FCD XML and writes deterministic compact JSON with
 time, WGS84 position, speed, acceleration, heading, edge ID and lane ID. Raw FCD remains in
 the run for audit, while `/api/runs/{runId}/trajectories` serves only client-oriented data.
-The dashboard loads the newest completed run, creates each Cesium vehicle entity once and
-interpolates positions against a shared typed playback store. Play, pause, restart, scrub and
-speed controls update the same clock, and clicking a vehicle shows its SUMO identifier.
+The dashboard loads the newest completed run, creates each Cesium vehicle entity once with a
+lightweight project-owned low-poly car model, and interpolates positions against a shared
+typed playback store. Play, pause, restart, scrub and speed controls update the same clock,
+and clicking a vehicle shows its SUMO identifier.
 
 The verified baseline produced 45 trajectory records. Two repeated effective configurations
 produced byte-identical compact trajectory JSON. Coordinate transforms and geographic output

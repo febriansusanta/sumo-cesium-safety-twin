@@ -109,7 +109,7 @@ For the current imported Nanke run:
 | Light extruded blocks | Optional `Mapbox 3D Buildings` basemap mode. The dashboard requests Mapbox Streets v8 building vector tiles near the active SUMO network and renders them as Cesium extruded polygons. |
 | Pink circles | Real/observed point data from `Data/sumo/real_point.shp`. |
 | Blue circles | SUMO-derived point data from `Data/sumo/sumo_point.shp`. |
-| Cyan moving rectangles/points | Vehicles from `fcd.xml`. |
+| Low-poly cyan cars | Vehicles from `fcd.xml`. Each car is a lightweight project-owned glTF model styled after low-poly traffic assets. |
 | Orange/yellow markers | Warning-level safety events. |
 | Red markers | Critical-level safety events. |
 | Playback slider | Simulation time. Moving it changes vehicles, events and charts together. |

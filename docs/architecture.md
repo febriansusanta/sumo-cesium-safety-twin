@@ -74,9 +74,9 @@ and generated road overlay keep the application usable when imagery is unavailab
 
 FCD is generated directly in geographic coordinates from SUMO's retained projection and
 parsed incrementally to bound processor memory. Compact trajectories are sorted by vehicle
-ID and contain stable sample order. The browser keeps one entity per vehicle; callback
-positions interpolate between adjacent samples using the single playback store shared by
-the controls and Cesium scene.
+ID and contain stable sample order. The browser keeps one low-poly car entity per vehicle;
+callback positions interpolate between adjacent samples using the single playback store
+shared by the controls and Cesium scene.
 
 Every simulated passenger vehicle receives the SSM device. Its measure and threshold lists
 are generated in the same order, with trajectories and geographic conflict points retained.
