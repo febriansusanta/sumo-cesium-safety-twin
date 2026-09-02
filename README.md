@@ -60,6 +60,8 @@ python scripts/import_local_data.py --list
                              list SUMO projects in the sibling Data folder
 python scripts/import_local_data.py
                              import the best playback-ready local SUMO run
+python scripts/export_static_site_data.py
+                             export the newest completed run for GitHub Pages playback
 python scripts/export_run.py RUN_ID
                              export a completed run archive
 python -m pipeline.entrypoint network  download/cache OSM and build/validate the network
@@ -97,6 +99,36 @@ comparison; each layer keeps its own attribution in Cesium. The `Mapbox 3D Build
 basemap uses Mapbox Streets imagery and decodes the Mapbox Streets v8 `building` vector-tile
 layer into Cesium extruded polygons around the active SUMO network. To enable it, set
 `VITE_MAPBOX_TOKEN` in local `.env`; do not commit real tokens.
+
+## GitHub Pages
+
+The frontend can be published at:
+
+```text
+https://febriansusanta.github.io/sumo-cesium-safety-twin/
+```
+
+GitHub Pages is static hosting. The public site can replay the exported Nanke / project /
+高精 run from `web/public/static-data`, but it cannot run FastAPI, SUMO, local folder import
+or new simulations. Use localhost for those full backend workflows.
+
+To refresh the static Pages snapshot after importing a different local run:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\import_local_data.py --replace
+.\.venv\Scripts\python.exe .\scripts\export_static_site_data.py --run-id local-nanke-project-11d06af0
+git add .github web/public/static-data web/src web/vite.config.ts scripts README.md
+git commit -m "Deploy static dashboard to GitHub Pages"
+git push
+```
+
+Enable Pages in the GitHub repository under `Settings` -> `Pages` -> `Source` ->
+`GitHub Actions`. The workflow in `.github/workflows/deploy-pages.yml` builds `web/dist`
+with the repository base path and publishes it automatically after pushes to `main`.
+
+For Mapbox 3D buildings on the public site, add a repository secret named
+`VITE_MAPBOX_TOKEN` under `Settings` -> `Secrets and variables` -> `Actions`. Do not commit
+the token to `.env` or source files.
 
 ## Using the local Data folder
 

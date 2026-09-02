@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "";
+const STATIC_FALLBACK_ENABLED = import.meta.env.VITE_STATIC_FALLBACK !== "false";
+
 const healthSchema = z.object({
   status: z.literal("ok"),
   service: z.string(),
@@ -140,70 +143,139 @@ const localDatasetSchema = z.object({
 
 export type LocalDataset = z.infer<typeof localDatasetSchema>;
 
+function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
+function staticUrls(path: string): string[] {
+  const base = import.meta.env.BASE_URL.endsWith("/")
+    ? import.meta.env.BASE_URL
+    : `${import.meta.env.BASE_URL}/`;
+  const baseUrl = `${base}static-data/${path}`;
+  const rootUrl = `/static-data/${path}`;
+  return baseUrl === rootUrl ? [baseUrl] : [baseUrl, rootUrl];
+}
+
+function canUseStaticFallback(fetcher: typeof fetch, fallbackPath?: string): boolean {
+  return fetcher === fetch && STATIC_FALLBACK_ENABLED && fallbackPath !== undefined;
+}
+
+async function fetchJson<T>(
+  path: string,
+  label: string,
+  schema: z.ZodType<T>,
+  fetcher: typeof fetch,
+  fallbackPath?: string,
+): Promise<T> {
+  try {
+    const response = await fetcher(apiUrl(path));
+    if (response.ok) return schema.parse(await response.json());
+    if (!canUseStaticFallback(fetcher, fallbackPath)) {
+      throw new Error(`${label} request failed (${response.status})`);
+    }
+  } catch (error) {
+    if (!canUseStaticFallback(fetcher, fallbackPath)) throw error;
+  }
+
+  let fallbackError: unknown;
+  for (const candidate of staticUrls(fallbackPath!)) {
+    try {
+      const fallbackResponse = await fetcher(candidate);
+      if (!fallbackResponse.ok) {
+        throw new Error(`${label} static fallback failed (${fallbackResponse.status})`);
+      }
+      return schema.parse(await fallbackResponse.json());
+    } catch (error) {
+      fallbackError = error;
+    }
+  }
+  if (fallbackError instanceof Error) {
+    throw new Error(`${label} static fallback failed: ${fallbackError.message}`);
+  }
+  throw new Error(`${label} static fallback failed`);
+}
+
 export async function fetchHealth(fetcher: typeof fetch = fetch): Promise<Health> {
-  const response = await fetcher("/api/health");
-  if (!response.ok) throw new Error(`API health request failed (${response.status})`);
-  return healthSchema.parse(await response.json());
+  return fetchJson("/api/health", "API health", healthSchema, fetcher, "health.json");
 }
 
 export async function fetchNetwork(fetcher: typeof fetch = fetch): Promise<NetworkGeoJson> {
-  const response = await fetcher("/api/network");
-  if (!response.ok) throw new Error(`Network request failed (${response.status})`);
-  return networkSchema.parse(await response.json());
+  return fetchJson("/api/network", "Network", networkSchema, fetcher, "network.geojson");
 }
 
 export async function fetchPointOverlays(
   fetcher: typeof fetch = fetch,
 ): Promise<PointOverlayGeoJson> {
-  const response = await fetcher("/api/point-overlays");
-  if (!response.ok) throw new Error(`Point-overlay request failed (${response.status})`);
-  return pointOverlaySchema.parse(await response.json());
+  return fetchJson(
+    "/api/point-overlays",
+    "Point-overlay",
+    pointOverlaySchema,
+    fetcher,
+    "point-overlays.geojson",
+  );
 }
 
 export async function fetchRuns(fetcher: typeof fetch = fetch): Promise<Run[]> {
-  const response = await fetcher("/api/runs");
-  if (!response.ok) throw new Error(`Run request failed (${response.status})`);
-  return z.array(runSchema).parse(await response.json());
+  return fetchJson("/api/runs", "Run", z.array(runSchema), fetcher, "runs.json");
 }
 
 export async function fetchTrajectories(
   runId: string,
   fetcher: typeof fetch = fetch,
 ): Promise<Trajectory[]> {
-  const response = await fetcher(`/api/runs/${encodeURIComponent(runId)}/trajectories`);
-  if (!response.ok) throw new Error(`Trajectory request failed (${response.status})`);
-  return z.array(trajectorySchema).parse(await response.json());
+  const encodedRunId = encodeURIComponent(runId);
+  return fetchJson(
+    `/api/runs/${encodedRunId}/trajectories`,
+    "Trajectory",
+    z.array(trajectorySchema),
+    fetcher,
+    `runs/${encodedRunId}/trajectories.json`,
+  );
 }
 
 export async function fetchSafetyEvents(
   runId: string,
   fetcher: typeof fetch = fetch,
 ): Promise<SafetyEvent[]> {
-  const response = await fetcher(`/api/runs/${encodeURIComponent(runId)}/safety-events`);
-  if (!response.ok) throw new Error(`Safety-event request failed (${response.status})`);
-  return z.array(safetyEventSchema).parse(await response.json());
+  const encodedRunId = encodeURIComponent(runId);
+  return fetchJson(
+    `/api/runs/${encodedRunId}/safety-events`,
+    "Safety-event",
+    z.array(safetyEventSchema),
+    fetcher,
+    `runs/${encodedRunId}/safety-events.json`,
+  );
 }
 
 export async function fetchTimeSeries(
   runId: string,
   fetcher: typeof fetch = fetch,
 ): Promise<TimeSeries[]> {
-  const response = await fetcher(`/api/runs/${encodeURIComponent(runId)}/timeseries`);
-  if (!response.ok) throw new Error(`Timeseries request failed (${response.status})`);
-  return z.array(timeSeriesSchema).parse(await response.json());
+  const encodedRunId = encodeURIComponent(runId);
+  return fetchJson(
+    `/api/runs/${encodedRunId}/timeseries`,
+    "Timeseries",
+    z.array(timeSeriesSchema),
+    fetcher,
+    `runs/${encodedRunId}/timeseries.json`,
+  );
 }
 
 export async function fetchPresets(fetcher: typeof fetch = fetch): Promise<Preset[]> {
-  const response = await fetcher("/api/scenarios/presets");
-  if (!response.ok) throw new Error(`Preset request failed (${response.status})`);
-  return z.array(presetSchema).parse(await response.json());
+  return fetchJson(
+    "/api/scenarios/presets",
+    "Preset",
+    z.array(presetSchema),
+    fetcher,
+    "presets.json",
+  );
 }
 
 export async function validateScenario(
   scenario: Record<string, unknown>,
   fetcher: typeof fetch = fetch,
 ): Promise<z.infer<typeof validationSchema>> {
-  const response = await fetcher("/api/scenarios/validate", {
+  const response = await fetcher(apiUrl("/api/scenarios/validate"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(scenario),
@@ -216,7 +288,7 @@ export async function createRun(
   scenario: Record<string, unknown>,
   fetcher: typeof fetch = fetch,
 ): Promise<Run> {
-  const response = await fetcher("/api/runs", {
+  const response = await fetcher(apiUrl("/api/runs"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(scenario),
@@ -226,31 +298,39 @@ export async function createRun(
 }
 
 export async function fetchRun(runId: string, fetcher: typeof fetch = fetch): Promise<Run> {
-  const response = await fetcher(`/api/runs/${encodeURIComponent(runId)}/status`);
-  if (!response.ok) throw new Error(`Run status failed (${response.status})`);
-  return runSchema.parse(await response.json());
+  const encodedRunId = encodeURIComponent(runId);
+  return fetchJson(
+    `/api/runs/${encodedRunId}/status`,
+    "Run status",
+    runSchema,
+    fetcher,
+    `runs/${encodedRunId}/run.json`,
+  );
 }
 
 export async function fetchSummary(
   runId: string,
   fetcher: typeof fetch = fetch,
 ): Promise<RunSummary> {
-  const response = await fetcher(`/api/runs/${encodeURIComponent(runId)}/summary`);
-  if (!response.ok) throw new Error(`Summary request failed (${response.status})`);
-  return summarySchema.parse(await response.json());
+  const encodedRunId = encodeURIComponent(runId);
+  return fetchJson(
+    `/api/runs/${encodedRunId}/summary`,
+    "Summary",
+    summarySchema,
+    fetcher,
+    `runs/${encodedRunId}/summary.json`,
+  );
 }
 
 export async function fetchDemoRuns(fetcher: typeof fetch = fetch): Promise<DemoRun[]> {
-  const response = await fetcher("/api/demo-runs");
-  if (!response.ok) throw new Error(`Demo-run request failed (${response.status})`);
-  return z.array(demoSchema).parse(await response.json());
+  return fetchJson("/api/demo-runs", "Demo-run", z.array(demoSchema), fetcher, "demo-runs.json");
 }
 
 export async function loadDemoRun(
   demoId: string,
   fetcher: typeof fetch = fetch,
 ): Promise<Run> {
-  const response = await fetcher(`/api/demo-runs/${encodeURIComponent(demoId)}/load`, {
+  const response = await fetcher(apiUrl(`/api/demo-runs/${encodeURIComponent(demoId)}/load`), {
     method: "POST",
   });
   if (!response.ok) throw new Error(`Demo load failed (${response.status})`);
@@ -260,9 +340,13 @@ export async function loadDemoRun(
 export async function fetchLocalDatasets(
   fetcher: typeof fetch = fetch,
 ): Promise<LocalDataset[]> {
-  const response = await fetcher("/api/local-datasets");
-  if (!response.ok) throw new Error(`Local dataset request failed (${response.status})`);
-  return z.array(localDatasetSchema).parse(await response.json());
+  return fetchJson(
+    "/api/local-datasets",
+    "Local dataset",
+    z.array(localDatasetSchema),
+    fetcher,
+    "local-datasets.json",
+  );
 }
 
 export async function importLocalDataset(
@@ -270,7 +354,7 @@ export async function importLocalDataset(
   fetcher: typeof fetch = fetch,
 ): Promise<Run> {
   const response = await fetcher(
-    `/api/local-datasets/${encodeURIComponent(datasetId)}/import`,
+    apiUrl(`/api/local-datasets/${encodeURIComponent(datasetId)}/import`),
     { method: "POST" },
   );
   if (!response.ok) throw new Error(`Local dataset import failed (${response.status})`);

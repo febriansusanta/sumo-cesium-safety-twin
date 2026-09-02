@@ -31,6 +31,27 @@ describe("fetchNetwork", () => {
     );
     await expect(fetchNetwork(fetcher)).resolves.toMatchObject({ type: "FeatureCollection" });
   });
+
+  it("falls back to exported static data when the backend is unavailable", async () => {
+    const originalFetch = globalThis.fetch;
+    const fallbackFetch = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "/api/network") return new Response("missing", { status: 404 });
+      if (url === "/static-data/network.geojson") {
+        return new Response(JSON.stringify({ type: "FeatureCollection", features: [] }), {
+          status: 200,
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    globalThis.fetch = fallbackFetch;
+    try {
+      await expect(fetchNetwork()).resolves.toMatchObject({ type: "FeatureCollection" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(fallbackFetch).toHaveBeenNthCalledWith(2, "/static-data/network.geojson");
+  });
 });
 
 describe("fetchPointOverlays", () => {

@@ -290,11 +290,28 @@ function animate(timestamp: number): void {
 requestAnimationFrame(animate);
 
 const status = document.querySelector<HTMLOutputElement>("#api-status");
+let staticDashboardMode = false;
+
+function updateBackendActionState(): void {
+  for (const selector of ["#validate", "#run", "#load-demo", "#load-local-data"]) {
+    const button = document.querySelector<HTMLButtonElement>(selector);
+    if (button) button.disabled = staticDashboardMode;
+  }
+}
+
 void fetchHealth()
   .then((health) => {
+    staticDashboardMode = health.service === "static-pages";
     if (status) {
-      status.textContent = `API ${health.version} connected`;
+      status.textContent = staticDashboardMode
+        ? `Static dashboard ${health.version} loaded`
+        : `API ${health.version} connected`;
       status.dataset.state = "ok";
+    }
+    updateBackendActionState();
+    if (staticDashboardMode && validationOutput) {
+      validationOutput.value =
+        "GitHub Pages mode is read-only playback. Run simulation and local folder import still use localhost.";
     }
   })
   .catch((error: unknown) => {

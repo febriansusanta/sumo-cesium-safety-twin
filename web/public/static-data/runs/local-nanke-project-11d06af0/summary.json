@@ -1,0 +1,28 @@
+{
+  "scenarioName": "Local data: Nanke / project / 高精",
+  "duration": 3599.0,
+  "seed": 42,
+  "demandLevel": "medium",
+  "requestedVehicleCount": 1951,
+  "generatedVehicleCount": 1951,
+  "routedVehicleCount": 1951,
+  "discardedVehicleCount": 0,
+  "completedVehicleCount": 319,
+  "meanTravelTime": 42.57993730407524,
+  "meanDelay": 32.77228840125393,
+  "collisions": 0,
+  "teleports": 0,
+  "hardBrakingEvents": 255,
+  "emergencyBrakingEvents": 0,
+  "ttcWarningEvents": 1482,
+  "ttcCriticalEvents": 1219,
+  "minimumObservedTtc": 0.43,
+  "maximumObservedDrac": null,
+  "warnings": [
+    "Imported from local SUMO outputs; scenario controls are descriptive only for this run.",
+    "Traffic demand, driver behaviour and safety outcomes are uncalibrated.",
+    "Tripinfo XML was not fully well-formed; summary metrics used valid tripinfo rows."
+  ],
+  "sumoVersion": "imported local SUMO output",
+  "scenarioChecksum": "64c128a129e7c76ad7736aa737fa2f418531b19f50410ef80ed24e2ad1d1006f"
+}

@@ -24,6 +24,22 @@ Do not claim that a phase works unless you have executed and verified it locally
 
 ---
 
+# Current repository extension: GitHub Pages static playback
+
+This repository also supports an optional GitHub Pages deployment for the frontend at
+`https://febriansusanta.github.io/sumo-cesium-safety-twin/`.
+
+Treat GitHub Pages as read-only playback, not as the simulation platform. The Pages build
+loads exported JSON from `web/public/static-data` and cannot run FastAPI, SUMO, local-folder
+import or scenario validation. Those workflows remain localhost-only through `scripts/dev.py`.
+
+To refresh the public snapshot, import or generate a completed run locally, run
+`python scripts/export_static_site_data.py`, commit `web/public/static-data`, and push to
+`main`. Keep Mapbox tokens in `.env` locally or in the GitHub Actions secret
+`VITE_MAPBOX_TOKEN`; never commit real tokens.
+
+---
+
 # 1. Project objective
 
 Create a small, reproducible traffic-simulation digital-twin demonstrator that:

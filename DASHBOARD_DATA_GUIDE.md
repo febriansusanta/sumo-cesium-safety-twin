@@ -218,6 +218,33 @@ Then open:
 http://127.0.0.1:5173
 ```
 
+## GitHub Pages Version
+
+The dashboard can also be published as:
+
+```text
+https://febriansusanta.github.io/sumo-cesium-safety-twin/
+```
+
+That public GitHub Pages version is read-only. It uses the exported JSON files in:
+
+```text
+web/public/static-data
+```
+
+It can replay the exported Nanke / project / 高精 run, show the network, vehicles, safety
+events, charts and point overlays. It cannot run SUMO, import local folders or validate new
+scenarios because GitHub Pages does not run the FastAPI backend.
+
+To refresh the public snapshot, import or generate the desired run locally, then run:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\export_static_site_data.py
+git add web/public/static-data
+git commit -m "Refresh static dashboard data"
+git push
+```
+
 ## Short Presenter Script
 
 Use this explanation when showing the dashboard:

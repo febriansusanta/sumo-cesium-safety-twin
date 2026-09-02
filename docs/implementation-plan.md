@@ -9,6 +9,7 @@
 - [x] Phase 6 — dashboard refinement
 - [x] Phase 7 — reproducibility and collaborator package
 - [x] Local Data folder import for existing SUMO outputs
+- [x] GitHub Pages static dashboard export and deployment workflow
 
 Every checked phase has been built, tested, run and inspected. Phase 0 was restarted after
 the project changed from a container architecture to a host-native one. See Git history and
