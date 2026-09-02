@@ -3,11 +3,15 @@ import {
   EllipsoidTerrainProvider,
   type ImageryProvider,
   OpenStreetMapImageryProvider,
+  Rectangle,
   UrlTemplateImageryProvider,
   Viewer,
 } from "cesium";
 
 const NCKU_VIEW = { longitude: 120.2184, latitude: 22.9962 };
+const TAIWAN_BASEMAP_RECTANGLE = Rectangle.fromDegrees(118, 20, 123, 26.8);
+const NLSC_EMAP_TILE_URL =
+  "https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}";
 
 export interface BasemapOption {
   id: string;
@@ -16,10 +20,21 @@ export interface BasemapOption {
 }
 
 /**
- * Token-free basemaps. Dark and light CARTO styles keep the coloured vehicle
- * and safety-event markers legible; streets and satellite add context.
+ * Token-free basemaps. NLSC Taiwan e-Map is the default local context layer;
+ * the other layers stay available for contrast and visual checks.
  */
 export const BASEMAPS: BasemapOption[] = [
+  {
+    id: "nlsc",
+    label: "NLSC Taiwan",
+    createProvider: () =>
+      new UrlTemplateImageryProvider({
+        url: NLSC_EMAP_TILE_URL,
+        credit: "National Land Surveying and Mapping Center, Taiwan",
+        maximumLevel: 19,
+        rectangle: TAIWAN_BASEMAP_RECTANGLE,
+      }),
+  },
   {
     id: "dark",
     label: "Dark",
@@ -63,7 +78,7 @@ export const BASEMAPS: BasemapOption[] = [
   },
 ];
 
-export const DEFAULT_BASEMAP_ID = "dark";
+export const DEFAULT_BASEMAP_ID = "nlsc";
 
 /**
  * Replace the basemap imagery layer. The network, vehicles and safety events

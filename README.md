@@ -91,8 +91,9 @@ The default 0.06 km² extent covers Daxue Road and Shengli Road beside National 
 University in Tainan. Edit `config/default.yaml` or `.env` for supported overrides. Default
 services bind only to `127.0.0.1`; change `API_PORT` and `WEB_PORT` in `.env` if required.
 
-Road data and rendered map tiles are © OpenStreetMap contributors and subject to the ODbL
-and OpenStreetMap tile usage policy.
+The default dashboard basemap uses the NLSC Taiwan `EMAP` WMTS service. Optional
+OpenStreetMap/CARTO/Esri basemaps remain available in the basemap picker for visual
+comparison; each layer keeps its own attribution in Cesium.
 
 ## Using the local Data folder
 
