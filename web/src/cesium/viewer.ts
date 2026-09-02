@@ -17,6 +17,7 @@ export interface BasemapOption {
   id: string;
   label: string;
   createProvider: () => ImageryProvider;
+  showBuildings?: boolean;
 }
 
 /**
@@ -27,6 +28,18 @@ export const BASEMAPS: BasemapOption[] = [
   {
     id: "nlsc",
     label: "NLSC Taiwan",
+    createProvider: () =>
+      new UrlTemplateImageryProvider({
+        url: NLSC_EMAP_TILE_URL,
+        credit: "National Land Surveying and Mapping Center, Taiwan",
+        maximumLevel: 19,
+        rectangle: TAIWAN_BASEMAP_RECTANGLE,
+      }),
+  },
+  {
+    id: "nlsc-buildings",
+    label: "NLSC + 3D Buildings",
+    showBuildings: true,
     createProvider: () =>
       new UrlTemplateImageryProvider({
         url: NLSC_EMAP_TILE_URL,
@@ -79,6 +92,11 @@ export const BASEMAPS: BasemapOption[] = [
 ];
 
 export const DEFAULT_BASEMAP_ID = "nlsc";
+
+export function basemapShowsBuildings(id: string): boolean {
+  const option = BASEMAPS.find((basemap) => basemap.id === id) ?? BASEMAPS[0]!;
+  return option.showBuildings === true;
+}
 
 /**
  * Replace the basemap imagery layer. The network, vehicles and safety events

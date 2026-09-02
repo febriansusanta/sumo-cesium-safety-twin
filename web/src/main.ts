@@ -28,7 +28,13 @@ import { EVENT_COLORS, humanizeEventType, renderSafetyEvents } from "./cesium/ev
 import { renderNetwork } from "./cesium/network";
 import { renderPointOverlays } from "./cesium/point-overlays";
 import { highlightVehicle, renderVehicles } from "./cesium/vehicles";
-import { BASEMAPS, DEFAULT_BASEMAP_ID, createViewer, setBasemap } from "./cesium/viewer";
+import {
+  BASEMAPS,
+  DEFAULT_BASEMAP_ID,
+  basemapShowsBuildings,
+  createViewer,
+  setBasemap,
+} from "./cesium/viewer";
 import { PlaybackStore } from "./simulation/playback-store";
 
 declare global {
@@ -102,7 +108,6 @@ root.innerHTML = `
           <label class="toggle"><input type="checkbox" id="layer-vehicles" checked /> Vehicles</label>
           <label class="toggle"><input type="checkbox" id="layer-events" checked /> Safety events</label>
           <label class="toggle"><input type="checkbox" id="layer-network" checked /> Road network</label>
-          <label class="toggle"><input type="checkbox" id="layer-buildings" checked /> 3D buildings</label>
           <label class="toggle"><input type="checkbox" id="layer-real-points" checked /> Real points</label>
           <label class="toggle"><input type="checkbox" id="layer-sumo-points" checked /> SUMO points</label>
         </fieldset>
@@ -116,7 +121,7 @@ root.innerHTML = `
         <span class="lg lg-warning">Warning event</span>
         <span class="lg lg-critical">Critical event</span>
         <span class="lg lg-network">Road network</span>
-        <span class="lg lg-building">3D buildings</span>
+        <span id="legend-buildings" class="lg lg-building" hidden>3D buildings</span>
         <span class="lg lg-real-point">Real point</span>
         <span class="lg lg-sumo-point">SUMO point</span>
       </div>
@@ -153,20 +158,11 @@ if (!mapElement) throw new Error("Cesium container is missing");
 const viewer = createViewer(mapElement);
 const playback = new PlaybackStore();
 
-const basemapSelect = document.querySelector<HTMLSelectElement>("#basemap");
-if (basemapSelect) {
-  basemapSelect.replaceChildren(
-    ...BASEMAPS.map((basemap) => new Option(basemap.label, basemap.id)),
-  );
-  basemapSelect.value = DEFAULT_BASEMAP_ID;
-  basemapSelect.addEventListener("change", () => setBasemap(viewer, basemapSelect.value));
-}
-
 const layerVisibility = {
   vehicles: true,
   events: true,
   network: true,
-  buildings: true,
+  buildings: basemapShowsBuildings(DEFAULT_BASEMAP_ID),
   realPoints: true,
   sumoPoints: true,
 };
@@ -174,6 +170,18 @@ let networkDataSource: Cesium.GeoJsonDataSource | undefined;
 let buildingDataSource: Cesium.GeoJsonDataSource | undefined;
 let realPointEntities: Cesium.Entity[] = [];
 let sumoPointEntities: Cesium.Entity[] = [];
+let loadedTrajectories: Trajectory[] = [];
+let safetyEvents: SafetyEvent[] = [];
+const eventsById = new Map<string, SafetyEvent>();
+let vehicleEntities = new Map<string, Cesium.Entity>();
+let eventEntities = new Map<string, Cesium.Entity>();
+let dynamicEntities: Cesium.Entity[] = [];
+let currentEventIndex = -1;
+const buildingLegend = document.querySelector<HTMLElement>("#legend-buildings");
+
+function updateBuildingLegend(): void {
+  if (buildingLegend) buildingLegend.hidden = !layerVisibility.buildings;
+}
 
 function applyLayerVisibility(): void {
   // Event markers gate their own `show` via a playback-driven callback that also
@@ -183,6 +191,13 @@ function applyLayerVisibility(): void {
   if (buildingDataSource) buildingDataSource.show = layerVisibility.buildings;
   for (const entity of realPointEntities) entity.show = layerVisibility.realPoints;
   for (const entity of sumoPointEntities) entity.show = layerVisibility.sumoPoints;
+}
+
+function applyBasemapSelection(id: string): void {
+  setBasemap(viewer, id);
+  layerVisibility.buildings = basemapShowsBuildings(id);
+  updateBuildingLegend();
+  applyLayerVisibility();
 }
 
 function bindLayerToggle(id: string, key: keyof typeof layerVisibility): void {
@@ -195,9 +210,18 @@ function bindLayerToggle(id: string, key: keyof typeof layerVisibility): void {
 bindLayerToggle("layer-vehicles", "vehicles");
 bindLayerToggle("layer-events", "events");
 bindLayerToggle("layer-network", "network");
-bindLayerToggle("layer-buildings", "buildings");
 bindLayerToggle("layer-real-points", "realPoints");
 bindLayerToggle("layer-sumo-points", "sumoPoints");
+
+const basemapSelect = document.querySelector<HTMLSelectElement>("#basemap");
+if (basemapSelect) {
+  basemapSelect.replaceChildren(
+    ...BASEMAPS.map((basemap) => new Option(basemap.label, basemap.id)),
+  );
+  basemapSelect.value = DEFAULT_BASEMAP_ID;
+  applyBasemapSelection(basemapSelect.value);
+  basemapSelect.addEventListener("change", () => applyBasemapSelection(basemapSelect.value));
+}
 
 const playButton = document.querySelector<HTMLButtonElement>("#play");
 const restartButton = document.querySelector<HTMLButtonElement>("#restart");
@@ -302,13 +326,6 @@ const selectedVehicle = document.querySelector<HTMLElement>("#selected-vehicle")
 const vehicleChart = document.querySelector<HTMLElement>("#vehicle-chart");
 const summaryPanel = document.querySelector<HTMLElement>("#summary");
 const comparison = document.querySelector<HTMLElement>("#comparison");
-let loadedTrajectories: Trajectory[] = [];
-let safetyEvents: SafetyEvent[] = [];
-const eventsById = new Map<string, SafetyEvent>();
-let vehicleEntities = new Map<string, Cesium.Entity>();
-let eventEntities = new Map<string, Cesium.Entity>();
-let dynamicEntities: Cesium.Entity[] = [];
-let currentEventIndex = -1;
 
 function locationLabelForRun(scenarioName: string): string {
   const localPrefix = "Local data:";
