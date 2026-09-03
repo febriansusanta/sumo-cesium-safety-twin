@@ -17,6 +17,7 @@ import type { PlaybackStore } from "../simulation/playback-store";
 import { lowPolyCarModelUri } from "./low-poly-car";
 
 const CAR_GROUND_CLEARANCE = 0.08;
+const MODEL_HEADING_OFFSET_DEGREES = 90;
 
 export const VEHICLE_COLOR = "#38bdf8";
 export const VEHICLE_HIGHLIGHT_COLOR = "#facc15";
@@ -94,7 +95,9 @@ export function renderVehicles(
       orientation: new CallbackProperty(() => {
         const position = positionAt(trajectory, playback.value.time);
         if (!position) return undefined;
-        const heading = CesiumMath.toRadians(headingAt(trajectory, playback.value.time));
+        const heading = CesiumMath.toRadians(
+          headingAt(trajectory, playback.value.time) + MODEL_HEADING_OFFSET_DEGREES,
+        );
         return Transforms.headingPitchRollQuaternion(
           position,
           new HeadingPitchRoll(heading, 0, 0),
