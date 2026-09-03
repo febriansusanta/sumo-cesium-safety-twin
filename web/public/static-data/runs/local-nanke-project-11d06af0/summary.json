@@ -3,6 +3,16 @@
   "duration": 3599.0,
   "seed": 42,
   "demandLevel": "medium",
+  "networkId": "local-9415f05fe535",
+  "networkName": "Nanke / project / 高精",
+  "networkChecksum": "5aedb37002f78533a2c28a613cbc6fc15fe1b59eeaea8b946b3b32c4389e5ea7",
+  "networkBbox": {
+    "west": 120.29398191220635,
+    "south": 23.105595396349507,
+    "east": 120.29548884201131,
+    "north": 23.106692946593608
+  },
+  "drivingSide": "right",
   "requestedVehicleCount": 1951,
   "generatedVehicleCount": 1951,
   "routedVehicleCount": 1951,

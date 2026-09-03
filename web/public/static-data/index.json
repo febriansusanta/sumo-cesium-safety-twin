@@ -1,1 +1,1 @@
-{"title":"SUMO-Cesium Safety Twin static data","mode":"read-only-github-pages","runId":"local-nanke-project-11d06af0","network":"nanke-project-11d06af0-9415f05fe535.geojson","note":"This export is for playback only. SUMO simulation and local imports require the FastAPI backend."}
+{"title":"SUMO-Cesium Safety Twin static data","mode":"read-only-github-pages","runId":"local-nanke-project-11d06af0","network":"network.geojson","note":"This export is for playback only. SUMO simulation and local imports require the FastAPI backend."}
