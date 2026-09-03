@@ -103,7 +103,7 @@ root.innerHTML = `
         <label>East<input id="aoi-east" type="number" min="-180" max="180" step="0.000001" /></label>
         <label>North<input id="aoi-north" type="number" min="-90" max="90" step="0.000001" /></label>
       </div>
-      <div class="button-row"><button id="use-current-view" type="button">Use current view</button><button id="build-network" type="button">Build network</button></div>
+      <div class="button-row"><button id="use-current-view" type="button" disabled>Use current view</button><button id="build-network" type="button" disabled>Build network</button></div>
       <output id="aoi-status" class="form-message" aria-live="polite">Build a small AOI network before running a generated scenario.</output>
       <h2 id="scenario-heading">Scenario</h2>
       <label for="preset">Preset</label>
@@ -125,7 +125,7 @@ root.innerHTML = `
           <label>Step length (s)<input id="step-length" type="number" min="0.01" max="1" step="0.01" /></label>
         </div>
       </details>
-      <div class="button-row"><button id="reset" type="button">Reset</button><button id="validate" type="button">Validate</button><button id="run" type="button">Run simulation</button><button id="load-demo" type="button">Load demo run</button><button id="load-local-data" type="button">Load Data folder</button></div>
+      <div class="button-row"><button id="reset" type="button">Reset</button><button id="validate" type="button" disabled>Validate</button><button id="run" type="button" disabled>Run simulation</button><button id="load-demo" type="button" disabled>Load demo run</button><button id="load-local-data" type="button" disabled>Load Data folder</button></div>
       <output id="validation" class="form-message" aria-live="polite"></output>
       <dl>
         <div><dt>Location</dt><dd id="location-status">No AOI selected</dd></div>
@@ -228,6 +228,8 @@ const layerVisibility = {
 let networkDataSource: Cesium.GeoJsonDataSource | undefined;
 let currentNetwork: NetworkGeoJson | undefined;
 let staticDashboardMode = false;
+let backendActionsAvailable = false;
+let locationSearchMode: "pending" | "local-api" | "static-pages" = "pending";
 let selectedNetwork: NetworkMetadata | undefined;
 let selectedNetworkId: string | undefined;
 let mapboxBuildings: MapboxBuildingLayer | undefined;
@@ -519,15 +521,17 @@ function updateBackendActionState(): void {
     "#build-network",
   ]) {
     const button = document.querySelector<HTMLButtonElement>(selector);
-    if (button) button.disabled = staticDashboardMode;
+    if (button) button.disabled = !backendActionsAvailable;
   }
   const runButton = document.querySelector<HTMLButtonElement>("#run");
-  if (runButton) runButton.disabled = staticDashboardMode || !selectedNetworkId;
+  if (runButton) runButton.disabled = !backendActionsAvailable || !selectedNetworkId;
 }
 
 void fetchHealth()
   .then((health) => {
     staticDashboardMode = health.service === "static-pages";
+    backendActionsAvailable = !staticDashboardMode;
+    locationSearchMode = staticDashboardMode ? "static-pages" : "local-api";
     if (status) {
       status.textContent = staticDashboardMode
         ? `Static dashboard ${health.version} loaded`
@@ -537,10 +541,16 @@ void fetchHealth()
     updateBackendActionState();
     if (staticDashboardMode && validationOutput) {
       validationOutput.value =
-        "GitHub Pages mode is read-only playback. Run simulation and local folder import still use localhost.";
+        "GitHub Pages mode is read-only playback. Build network, run simulation and local folder import require localhost.";
+    }
+    if (locationSearchInput?.value.trim()) {
+      queueLocationAutocompleteSearch();
     }
   })
   .catch((error: unknown) => {
+    backendActionsAvailable = false;
+    locationSearchMode = "static-pages";
+    updateBackendActionState();
     if (status) {
       status.textContent = error instanceof Error ? error.message : "API unavailable";
       status.dataset.state = "error";
@@ -1278,8 +1288,15 @@ async function fetchLocationSuggestions(query: string, showSearchingMessage = fa
   if (showSearchingMessage && aoiStatus) aoiStatus.value = `Searching ${query}...`;
   try {
     const localResults = localLocationSuggestions(query);
+    if (locationSearchMode === "pending") {
+      locationSearchResults = mergeLocationSuggestions(localResults, []);
+      showLocationSuggestions(locationSearchResults, "Search service is still starting.");
+      if (aoiStatus) aoiStatus.value = "Checking search service...";
+      return;
+    }
     const token = getMapboxToken();
-    if (staticDashboardMode && !token) {
+    const useStaticSearch = locationSearchMode === "static-pages";
+    if (useStaticSearch && !token) {
       locationSearchResults = mergeLocationSuggestions(localResults, []);
       showLocationSuggestions(
         locationSearchResults,
@@ -1292,7 +1309,7 @@ async function fetchLocationSuggestions(query: string, showSearchingMessage = fa
       }
       return;
     }
-    const remoteResults: LocationSuggestionItem[] = staticDashboardMode
+    const remoteResults: LocationSuggestionItem[] = useStaticSearch
       ? (
           await searchMapboxLocationSuggestions(
             query,
@@ -1307,7 +1324,7 @@ async function fetchLocationSuggestions(query: string, showSearchingMessage = fa
     showLocationSuggestions(results);
     if (aoiStatus) {
       aoiStatus.value = results.length > 0
-        ? staticDashboardMode
+        ? useStaticSearch
           ? "Choose one Mapbox location suggestion. Network build requires localhost."
           : "Choose one location suggestion, then build the network."
         : "No location found.";
@@ -1350,6 +1367,10 @@ function queueLocationAutocompleteSearch(): void {
     return;
   }
   locationSearchDebounceId = window.setTimeout(() => {
+    if (locationSearchMode === "pending") {
+      queueLocationAutocompleteSearch();
+      return;
+    }
     void fetchLocationSuggestions(query);
   }, LOCATION_AUTOCOMPLETE_DEBOUNCE_MS);
 }
