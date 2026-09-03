@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  localLocationSuggestions,
   locationPrimaryLabel,
   locationSecondaryLabel,
   shouldSearchAutocomplete,
@@ -37,5 +38,13 @@ describe("location autocomplete helpers", () => {
     expect(locationPrimaryLabel(result)).toBe("Universitas Gadjah Mada");
     expect(locationSecondaryLabel(result)).toContain("Caturtunggal");
     expect(locationSecondaryLabel(result)).toContain("safe AOI");
+  });
+
+  it("suggests known local study areas by acronym", () => {
+    const suggestions = localLocationSuggestions("UGM");
+
+    expect(suggestions.map((item) => item.displayName)).toContain(
+      "Universitas Gadjah Mada, Sleman, Daerah Istimewa Yogyakarta, Indonesia",
+    );
   });
 });

@@ -60,6 +60,7 @@ import { PlaybackStore } from "./simulation/playback-store";
 import {
   LOCATION_AUTOCOMPLETE_DEBOUNCE_MS,
   LOCATION_AUTOCOMPLETE_MIN_LENGTH,
+  localLocationSuggestions,
   locationPrimaryLabel,
   locationSecondaryLabel,
   shouldSearchAutocomplete,
@@ -1116,6 +1117,24 @@ function locationSuggestionTitle(item: LocationSuggestionItem): string {
   return [item.suggestion.name, item.suggestion.placeFormatted].filter(Boolean).join(", ");
 }
 
+function mergeLocationSuggestions(
+  localResults: LocationSearchResult[],
+  remoteResults: LocationSuggestionItem[],
+): LocationSuggestionItem[] {
+  const merged: LocationSuggestionItem[] = localResults.map((result) => ({
+    provider: "local-api",
+    result,
+  }));
+  const seen = new Set(merged.map((item) => locationSuggestionPrimary(item).toLowerCase()));
+  for (const item of remoteResults) {
+    const label = locationSuggestionPrimary(item).toLowerCase();
+    if (seen.has(label)) continue;
+    seen.add(label);
+    merged.push(item);
+  }
+  return merged.slice(0, 5);
+}
+
 function applyLocationSearchResult(result: LocationSearchResult): void {
   stopOrbit();
   selectedNetwork = undefined;
@@ -1258,19 +1277,22 @@ async function fetchLocationSuggestions(query: string, showSearchingMessage = fa
   const requestId = ++locationSearchRequestId;
   if (showSearchingMessage && aoiStatus) aoiStatus.value = `Searching ${query}...`;
   try {
+    const localResults = localLocationSuggestions(query);
     const token = getMapboxToken();
     if (staticDashboardMode && !token) {
-      locationSearchResults = [];
+      locationSearchResults = mergeLocationSuggestions(localResults, []);
       showLocationSuggestions(
-        [],
+        locationSearchResults,
         "Mapbox token is missing, so public autocomplete is unavailable. Use localhost for backend search.",
       );
       if (aoiStatus) {
-        aoiStatus.value = "Public autocomplete requires VITE_MAPBOX_TOKEN in GitHub Actions secrets.";
+        aoiStatus.value = locationSearchResults.length > 0
+          ? "Choose a local suggestion. Online public autocomplete requires VITE_MAPBOX_TOKEN."
+          : "Public autocomplete requires VITE_MAPBOX_TOKEN in GitHub Actions secrets.";
       }
       return;
     }
-    const results: LocationSuggestionItem[] = staticDashboardMode
+    const remoteResults: LocationSuggestionItem[] = staticDashboardMode
       ? (
           await searchMapboxLocationSuggestions(
             query,
@@ -1280,6 +1302,7 @@ async function fetchLocationSuggestions(query: string, showSearchingMessage = fa
         ).map((suggestion) => ({ provider: "mapbox", suggestion }))
       : (await searchLocations(query)).map((result) => ({ provider: "local-api", result }));
     if (requestId !== locationSearchRequestId) return;
+    const results = mergeLocationSuggestions(localResults, remoteResults);
     locationSearchResults = results;
     showLocationSuggestions(results);
     if (aoiStatus) {

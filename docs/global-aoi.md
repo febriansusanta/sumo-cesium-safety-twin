@@ -74,8 +74,9 @@ Location search uses the local FastAPI server as a Nominatim/OpenStreetMap proxy
 localhost mode. It sends requests after a short autocomplete debounce or explicit search,
 includes an identifying User-Agent, caches responses in `data/cache/location-search`,
 displays candidate locations as a clickable suggestion menu, and narrows very large place
-results to a small AOI around the returned center point. In GitHub Pages mode, the input
-remains editable and uses Mapbox Search Box autocomplete when the static build includes
+results to a small AOI around the returned center point. Known aliases such as `UGM`,
+`Nanke`, and `NCKU` are shown before online results. In GitHub Pages mode, the input remains
+editable and uses Mapbox Search Box autocomplete when the static build includes
 `VITE_MAPBOX_TOKEN`; SUMO network building still requires the localhost backend.
 
 Changing the AOI does not calibrate demand, signal timing, driver behaviour or safety
