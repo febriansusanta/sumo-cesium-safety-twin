@@ -138,9 +138,16 @@ root.innerHTML = `
           <label class="toggle"><input type="checkbox" id="layer-real-points" checked /> Real points</label>
           <label class="toggle"><input type="checkbox" id="layer-sumo-points" checked /> SUMO points</label>
         </fieldset>
-        <div class="basemap-picker">
-          <label for="basemap">Basemap</label>
-          <select id="basemap" aria-label="Basemap style"></select>
+        <div class="map-control-stack">
+          <div class="camera-tools" aria-label="Map camera controls">
+            <button id="north-up-view" type="button" title="Rotate north to the top">North Up</button>
+            <button id="top-view" type="button" title="Look straight down over the active study area">Top View</button>
+            <button id="orbit-view" type="button" title="Toggle 3D orbit around the active study area" aria-pressed="false">Orbit</button>
+          </div>
+          <div class="basemap-picker">
+            <label for="basemap">Basemap</label>
+            <select id="basemap" aria-label="Basemap style"></select>
+          </div>
         </div>
       </div>
       <div class="map-legend">
@@ -184,6 +191,10 @@ const mapElement = document.querySelector<HTMLElement>("#cesium-container");
 if (!mapElement) throw new Error("Cesium container is missing");
 const viewer = createViewer(mapElement);
 const playback = new PlaybackStore();
+const TOP_VIEW_PITCH = Cesium.Math.toRadians(-90);
+const ORBIT_VIEW_PITCH = Cesium.Math.toRadians(-55);
+const ORBIT_RATE = Cesium.Math.toRadians(8);
+const MIN_CAMERA_RANGE_METERS = 650;
 
 const layerVisibility = {
   vehicles: true,
@@ -195,6 +206,9 @@ const layerVisibility = {
 };
 let networkDataSource: Cesium.GeoJsonDataSource | undefined;
 let currentNetwork: NetworkGeoJson | undefined;
+let staticDashboardMode = false;
+let selectedNetwork: NetworkMetadata | undefined;
+let selectedNetworkId: string | undefined;
 let mapboxBuildings: MapboxBuildingLayer | undefined;
 let mapboxBuildingLoad: Promise<void> | undefined;
 let realPointEntities: Cesium.Entity[] = [];
@@ -207,6 +221,162 @@ let eventEntities = new Map<string, Cesium.Entity>();
 let dynamicEntities: Cesium.Entity[] = [];
 let currentEventIndex = -1;
 const buildingLegend = document.querySelector<HTMLElement>("#legend-buildings");
+const northUpButton = document.querySelector<HTMLButtonElement>("#north-up-view");
+const topViewButton = document.querySelector<HTMLButtonElement>("#top-view");
+const orbitButton = document.querySelector<HTMLButtonElement>("#orbit-view");
+let orbitEnabled = false;
+let orbitHeading = 0;
+let orbitRange = MIN_CAMERA_RANGE_METERS;
+let orbitCenter: Cesium.Cartesian3 | undefined;
+let lastOrbitTimestamp: number | undefined;
+
+function coordinatesFromGeoJson(value: unknown, coordinates: Array<[number, number]> = []): Array<[number, number]> {
+  if (Array.isArray(value)) {
+    if (
+      value.length >= 2
+      && typeof value[0] === "number"
+      && typeof value[1] === "number"
+    ) {
+      coordinates.push([value[0], value[1]]);
+      return coordinates;
+    }
+    for (const item of value) coordinatesFromGeoJson(item, coordinates);
+    return coordinates;
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value as Record<string, unknown>)) {
+      coordinatesFromGeoJson(item, coordinates);
+    }
+  }
+  return coordinates;
+}
+
+function bboxFromNetwork(network: NetworkGeoJson | undefined): BoundingBox | undefined {
+  if (!network) return undefined;
+  const coordinates = coordinatesFromGeoJson(network);
+  if (coordinates.length === 0) return undefined;
+  const longitudes = coordinates.map(([longitude]) => longitude);
+  const latitudes = coordinates.map(([, latitude]) => latitude);
+  return {
+    west: Math.min(...longitudes),
+    south: Math.min(...latitudes),
+    east: Math.max(...longitudes),
+    north: Math.max(...latitudes),
+  };
+}
+
+function activeBbox(): BoundingBox | undefined {
+  return selectedNetwork?.bbox ?? bboxFromNetwork(currentNetwork);
+}
+
+function bboxCenter(bbox: BoundingBox): { longitude: number; latitude: number } {
+  return {
+    longitude: (bbox.west + bbox.east) / 2,
+    latitude: (bbox.south + bbox.north) / 2,
+  };
+}
+
+function cameraRangeForBbox(bbox: BoundingBox, multiplier = 2.7): number {
+  const center = bboxCenter(bbox);
+  const latitudeMeters = Math.abs(bbox.north - bbox.south) * 111_320;
+  const longitudeMeters =
+    Math.abs(bbox.east - bbox.west)
+    * 111_320
+    * Math.max(0.2, Math.cos(Cesium.Math.toRadians(center.latitude)));
+  return Math.max(MIN_CAMERA_RANGE_METERS, Math.max(latitudeMeters, longitudeMeters) * multiplier);
+}
+
+function destinationForBbox(bbox: BoundingBox): Cesium.Cartesian3 {
+  const center = bboxCenter(bbox);
+  return Cesium.Cartesian3.fromDegrees(
+    center.longitude,
+    center.latitude,
+    cameraRangeForBbox(bbox),
+  );
+}
+
+function setOrbitPressed(active: boolean): void {
+  if (!orbitButton) return;
+  orbitButton.setAttribute("aria-pressed", String(active));
+  orbitButton.textContent = active ? "Stop Orbit" : "Orbit";
+}
+
+function stopOrbit(): void {
+  orbitEnabled = false;
+  lastOrbitTimestamp = undefined;
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  setOrbitPressed(false);
+}
+
+function activateTopView(): void {
+  stopOrbit();
+  const bbox = activeBbox();
+  if (!bbox) return;
+  viewer.trackedEntity = undefined;
+  viewer.camera.flyTo({
+    destination: destinationForBbox(bbox),
+    orientation: {
+      heading: 0,
+      pitch: TOP_VIEW_PITCH,
+      roll: 0,
+    },
+    duration: 0.8,
+  });
+}
+
+function activateNorthUpView(): void {
+  stopOrbit();
+  viewer.trackedEntity = undefined;
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
+    orientation: {
+      heading: 0,
+      pitch: viewer.camera.pitch,
+      roll: 0,
+    },
+    duration: 0.5,
+  });
+}
+
+function refreshOrbitTarget(): boolean {
+  const bbox = activeBbox();
+  if (!bbox) return false;
+  const center = bboxCenter(bbox);
+  orbitCenter = Cesium.Cartesian3.fromDegrees(center.longitude, center.latitude, 0);
+  orbitRange = cameraRangeForBbox(bbox, 2.4);
+  return true;
+}
+
+function toggleOrbitView(): void {
+  if (orbitEnabled) {
+    stopOrbit();
+    return;
+  }
+  if (!refreshOrbitTarget()) return;
+  viewer.trackedEntity = undefined;
+  orbitEnabled = true;
+  orbitHeading = viewer.camera.heading;
+  lastOrbitTimestamp = undefined;
+  setOrbitPressed(true);
+}
+
+northUpButton?.addEventListener("click", activateNorthUpView);
+topViewButton?.addEventListener("click", activateTopView);
+orbitButton?.addEventListener("click", toggleOrbitView);
+
+viewer.scene.preRender.addEventListener(() => {
+  if (!orbitEnabled || !orbitCenter) return;
+  const timestamp = performance.now();
+  const elapsedSeconds =
+    lastOrbitTimestamp === undefined ? 0 : (timestamp - lastOrbitTimestamp) / 1000;
+  lastOrbitTimestamp = timestamp;
+  orbitHeading += elapsedSeconds * ORBIT_RATE;
+  viewer.camera.lookAt(
+    orbitCenter,
+    new Cesium.HeadingPitchRange(orbitHeading, ORBIT_VIEW_PITCH, orbitRange),
+  );
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+});
 
 function updateBuildingLegend(): void {
   if (buildingLegend) buildingLegend.hidden = !layerVisibility.buildings;
@@ -314,9 +484,6 @@ function animate(timestamp: number): void {
 requestAnimationFrame(animate);
 
 const status = document.querySelector<HTMLOutputElement>("#api-status");
-let staticDashboardMode = false;
-let selectedNetwork: NetworkMetadata | undefined;
-let selectedNetworkId: string | undefined;
 
 function updateBackendActionState(): void {
   for (const selector of [
@@ -392,6 +559,7 @@ async function showNetwork(network: NetworkGeoJson, metadata?: NetworkMetadata):
   selectedNetworkId =
     metadata?.status === "ready" ? metadata.networkId : selectedNetworkId;
   currentNetwork = network;
+  if (orbitEnabled) refreshOrbitTarget();
   networkDataSource = await renderNetwork(viewer, network);
   applyLayerVisibility();
   mappedFeatureCount = network.features.length;
@@ -626,6 +794,7 @@ playback.subscribe((snapshot) => {
 
 function locateEvent(index: number): void {
   if (safetyEvents.length === 0) return;
+  stopOrbit();
   currentEventIndex = (index + safetyEvents.length) % safetyEvents.length;
   const event = safetyEvents[currentEventIndex];
   if (!event) return;
