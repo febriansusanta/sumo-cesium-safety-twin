@@ -11,11 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from app.config import REPO_ROOT, Settings
+from app.models.network import DrivingSide, NetworkMetadata, NetworkStatus
 from app.models.run import RunMetadata, RunStatus, RunSummary, SafetySeverity, TimeSeries
-from app.models.scenario import DemandConfig, DemandLevel, ScenarioConfig
+from app.models.scenario import BoundingBox, DemandConfig, DemandLevel, ScenarioConfig
 
 from .checksum_service import file_checksum, object_checksum
 from .coordinate_service import CoordinateTransformer, read_network_location
+from .network_registry_service import NetworkRegistry
 from .network_service import export_geojson, validate_network
 from .result_service import write_trajectories
 from .safety_service import (
@@ -249,6 +251,82 @@ def _relative_to_data_root(path: Path, data_root: Path) -> str:
         return path.name
 
 
+def _geojson_bbox(path: Path) -> BoundingBox:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    coordinates = _all_coordinates(payload)
+    if not coordinates:
+        raise LocalDataImportError("network GeoJSON contains no coordinates")
+    longitudes = [item[0] for item in coordinates]
+    latitudes = [item[1] for item in coordinates]
+    return BoundingBox(
+        west=min(longitudes),
+        south=min(latitudes),
+        east=max(longitudes),
+        north=max(latitudes),
+    )
+
+
+def _all_coordinates(value: Any) -> list[tuple[float, float]]:
+    if isinstance(value, list):
+        if (
+            len(value) >= 2
+            and isinstance(value[0], int | float)
+            and isinstance(value[1], int | float)
+        ):
+            longitude = float(value[0])
+            latitude = float(value[1])
+            return [(longitude, latitude)]
+        return [coordinate for item in value for coordinate in _all_coordinates(item)]
+    if isinstance(value, dict):
+        return [coordinate for item in value.values() for coordinate in _all_coordinates(item)]
+    return []
+
+
+def _register_local_network(
+    settings: Settings,
+    dataset: LocalDataset,
+    network_id: str,
+    network_path: Path,
+    geojson_path: Path,
+    stats: dict[str, int],
+    warnings: list[str],
+) -> BoundingBox:
+    registry = NetworkRegistry(settings)
+    registered_network_path = registry.network_path(network_id)
+    registered_geojson_path = registry.geojson_path(network_id)
+    registered_network_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(network_path, registered_network_path)
+    shutil.copyfile(geojson_path, registered_geojson_path)
+    bbox = _geojson_bbox(registered_geojson_path)
+    metadata = NetworkMetadata(
+        network_id=network_id,
+        name=dataset.title,
+        bbox=bbox,
+        driving_side=DrivingSide.RIGHT,
+        status=NetworkStatus.READY,
+        source=f"local Data/{dataset.relative_path}",
+        network_checksum=file_checksum(registered_network_path),
+        geojson_checksum=file_checksum(registered_geojson_path),
+        edge_count=stats["edges"],
+        lane_count=stats["lanes"],
+        junction_count=stats["junctions"],
+        cache_hit=True,
+        message="Registered from imported local SUMO data.",
+        warnings=warnings,
+    )
+    registry.write(metadata)
+    _write_json(
+        registry.source_reference_path(network_id),
+        {
+            "sourceDataset": dataset.relative_path,
+            "networkChecksum": metadata.network_checksum,
+            "geojsonChecksum": metadata.geojson_checksum,
+            "stats": stats,
+        },
+    )
+    return bbox
+
+
 def import_local_dataset(
     settings: Settings,
     dataset_id: str | None = None,
@@ -268,7 +346,12 @@ def import_local_dataset(
     run_dir = settings.data_dir / "runs" / safe_run_id
     metadata_path = run_dir / "run.json"
     if metadata_path.is_file() and not replace:
-        return RunMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+        existing = RunMetadata.model_validate_json(metadata_path.read_text(encoding="utf-8"))
+        if existing.network_id and NetworkRegistry(settings).geojson_path(
+            existing.network_id
+        ).is_file():
+            return existing
+        replace = True
     if run_dir.exists():
         if not replace:
             raise LocalDataImportError(f"run already exists: {safe_run_id}")
@@ -278,6 +361,7 @@ def import_local_dataset(
     network_key = object_checksum(
         {"dataset": dataset.id, "network": file_checksum(dataset.network_path)}
     )
+    network_id = f"local-{network_key[:12]}"
     network_dir = settings.data_dir / "network"
     network_dir.mkdir(parents=True, exist_ok=True)
     network_path = network_dir / f"{dataset.id}-{network_key[:12]}.net.xml"
@@ -306,6 +390,15 @@ def import_local_dataset(
             "stats": stats,
             "warnings": warnings,
         },
+    )
+    network_bbox = _register_local_network(
+        settings,
+        dataset,
+        network_id,
+        network_path,
+        geojson_path,
+        stats,
+        warnings,
     )
 
     transformer = CoordinateTransformer(read_network_location(network_path))
@@ -366,9 +459,11 @@ def import_local_dataset(
         duration=observed_duration,
         seed=scenario.seed,
         demand_level=scenario.demand.level.value,
-        network_id=f"local-{network_key[:12]}",
+        network_id=network_id,
         network_name=dataset.title,
         network_checksum=file_checksum(network_path),
+        network_bbox=network_bbox,
+        driving_side=DrivingSide.RIGHT,
         requested_vehicle_count=trip_count or routed_count or len(trajectories),
         generated_vehicle_count=trip_count or routed_count or len(trajectories),
         routed_vehicle_count=routed_count or len(trajectories),
@@ -454,9 +549,11 @@ def import_local_dataset(
         status=RunStatus.COMPLETED,
         scenario=scenario,
         scenario_checksum=scenario.checksum(),
-        network_id=f"local-{network_key[:12]}",
+        network_id=network_id,
         network_name=dataset.title,
         network_checksum=file_checksum(network_path),
+        network_bbox=network_bbox,
+        driving_side=DrivingSide.RIGHT,
         message="Imported from the local Data folder.",
     )
     metadata_path.write_text(

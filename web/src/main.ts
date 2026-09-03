@@ -657,6 +657,20 @@ async function loadRun(runId: string, scenarioName: string): Promise<void> {
     fetchTimeSeries(runId),
     fetchSummary(runId),
   ]);
+  if (summary.networkId) {
+    try {
+      const metadata = await fetchNetworkStatus(summary.networkId);
+      await showNetwork(await fetchNetworkGeoJson(summary.networkId), metadata);
+      applySelectedNetwork(metadata);
+    } catch (error) {
+      if (aoiStatus) {
+        aoiStatus.value =
+          error instanceof Error
+            ? `Run network unavailable: ${error.message}`
+            : "Run network unavailable";
+      }
+    }
+  }
   for (const entity of dynamicEntities) viewer.entities.remove(entity);
   loadedTrajectories = trajectories;
   safetyEvents = events;

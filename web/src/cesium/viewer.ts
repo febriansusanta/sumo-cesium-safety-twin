@@ -112,7 +112,7 @@ export const BASEMAPS: BasemapOption[] = [
   },
 ];
 
-export const DEFAULT_BASEMAP_ID = "dark";
+export const DEFAULT_BASEMAP_ID = "nlsc";
 
 export function basemapUsesMapboxBuildings(id: string): boolean {
   const option = BASEMAPS.find((basemap) => basemap.id === id) ?? BASEMAPS[0]!;

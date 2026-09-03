@@ -8,7 +8,7 @@ import {
 
 describe("basemap building mode", () => {
   it("keeps buildings off by default and enables them only for the Mapbox 3D option", () => {
-    expect(DEFAULT_BASEMAP_ID).toBe("dark");
+    expect(DEFAULT_BASEMAP_ID).toBe("nlsc");
     expect(basemapUsesMapboxBuildings(DEFAULT_BASEMAP_ID)).toBe(false);
     expect(BASEMAPS.some((basemap) => basemap.id === "nlsc-buildings")).toBe(false);
     expect(BASEMAPS.some((basemap) => basemap.id === MAPBOX_3D_BUILDINGS_BASEMAP_ID)).toBe(true);
