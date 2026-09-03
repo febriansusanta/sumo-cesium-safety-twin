@@ -41,6 +41,9 @@ summary { cursor: pointer; color: #a7c9d0; font-size: .8rem; }
 .search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .45rem; align-items: stretch; }
 .search-row input, .search-row button { margin: 0; }
 .search-row button { width: auto; min-width: 5.5rem; padding-inline: .85rem; }
+.location-suggestions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .45rem; }
+.location-suggestion { width: auto; margin: 0; padding: .35rem .5rem; font-size: .72rem; white-space: nowrap; }
+.location-suggestion:disabled { opacity: .55; }
 .location-results { margin-top: .5rem; font-size: .78rem; }
 .form-message { display: block; min-height: 1.5rem; margin-top: .5rem; color: #f6d89f; font-size: .75rem; line-height: 1.4; }
 dl { margin-top: 2rem; }

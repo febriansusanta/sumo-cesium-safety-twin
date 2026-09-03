@@ -98,7 +98,8 @@ fallback/sample AOI for scripts and first-time setup. In the localhost dashboard
 view, choose right- or left-hand driving, and build an explicit network before running
 generated scenarios. Search results are fetched by the local FastAPI server through
 Nominatim/OpenStreetMap and cached under `data/cache/location-search`; the app sends one
-request only when the user clicks `Search` or presses Enter. AOI limits in
+request only when the user clicks `Search`, presses Enter, or chooses one of the suggested
+study-area chips. AOI limits in
 `config/default.yaml` guard against accidental city-scale downloads.
 
 Registered AOI networks live under `data/networks/{network_id}` with `source.osm.xml`,

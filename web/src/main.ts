@@ -54,6 +54,7 @@ import {
   setBasemap,
 } from "./cesium/viewer";
 import { PlaybackStore } from "./simulation/playback-store";
+import { LOCATION_SEARCH_SUGGESTIONS } from "./ui/location-suggestions";
 
 declare global {
   interface Window {
@@ -81,6 +82,7 @@ root.innerHTML = `
         <input id="location-search" type="search" maxlength="120" placeholder="Nanke, Tainan" />
         <button id="search-location" type="button">Search</button>
       </div>
+      <div id="location-suggestions" class="location-suggestions" aria-label="Suggested search locations"></div>
       <select id="location-results" class="location-results" aria-label="Location search results" hidden></select>
       <div class="field-grid">
         <label>AOI name<input id="aoi-name" type="text" maxlength="80" value="custom-aoi" /></label>
@@ -509,6 +511,9 @@ function updateBackendActionState(): void {
     const button = document.querySelector<HTMLButtonElement>(selector);
     if (button) button.disabled = staticDashboardMode;
   }
+  document.querySelectorAll<HTMLButtonElement>(".location-suggestion").forEach((button) => {
+    button.disabled = staticDashboardMode;
+  });
   const runButton = document.querySelector<HTMLButtonElement>("#run");
   if (runButton) runButton.disabled = staticDashboardMode || !selectedNetworkId;
 }
@@ -1014,6 +1019,7 @@ const textInput = (id: string): HTMLInputElement => {
 const aoiStatus = document.querySelector<HTMLOutputElement>("#aoi-status");
 const locationSearchInput = document.querySelector<HTMLInputElement>("#location-search");
 const locationSearchButton = document.querySelector<HTMLButtonElement>("#search-location");
+const locationSuggestions = document.querySelector<HTMLElement>("#location-suggestions");
 const locationResultsSelect = document.querySelector<HTMLSelectElement>("#location-results");
 let locationSearchResults: LocationSearchResult[] = [];
 
@@ -1141,6 +1147,27 @@ async function runLocationSearch(): Promise<void> {
     if (locationSearchButton) locationSearchButton.disabled = staticDashboardMode;
   }
 }
+
+function renderLocationSuggestions(): void {
+  if (!locationSuggestions) return;
+  locationSuggestions.replaceChildren(
+    ...LOCATION_SEARCH_SUGGESTIONS.map((suggestion) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "location-suggestion";
+      button.textContent = suggestion.label;
+      button.title = `Search ${suggestion.query}`;
+      button.disabled = staticDashboardMode;
+      button.addEventListener("click", () => {
+        if (locationSearchInput) locationSearchInput.value = suggestion.query;
+        void runLocationSearch();
+      });
+      return button;
+    }),
+  );
+}
+
+renderLocationSuggestions();
 
 locationSearchButton?.addEventListener("click", () => {
   void runLocationSearch();
