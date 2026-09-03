@@ -54,7 +54,13 @@ import {
   setBasemap,
 } from "./cesium/viewer";
 import { PlaybackStore } from "./simulation/playback-store";
-import { LOCATION_SEARCH_SUGGESTIONS } from "./ui/location-suggestions";
+import {
+  LOCATION_AUTOCOMPLETE_DEBOUNCE_MS,
+  LOCATION_AUTOCOMPLETE_MIN_LENGTH,
+  locationPrimaryLabel,
+  locationSecondaryLabel,
+  shouldSearchAutocomplete,
+} from "./ui/location-search";
 
 declare global {
   interface Window {
@@ -78,12 +84,13 @@ root.innerHTML = `
     <aside class="panel panel-left" aria-labelledby="study-area-heading scenario-heading">
       <h2 id="study-area-heading">Study area</h2>
       <label for="location-search">Search location</label>
-      <div class="search-row">
-        <input id="location-search" type="search" maxlength="120" placeholder="Nanke, Tainan" />
-        <button id="search-location" type="button">Search</button>
+      <div class="search-shell">
+        <div class="search-row">
+          <input id="location-search" type="search" maxlength="120" placeholder="Type a place, e.g. UGM" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="location-suggestions" />
+          <button id="search-location" type="button">Search</button>
+        </div>
+        <div id="location-suggestions" class="location-suggestions" role="listbox" aria-label="Location suggestions" hidden></div>
       </div>
-      <div id="location-suggestions" class="location-suggestions" aria-label="Suggested search locations"></div>
-      <select id="location-results" class="location-results" aria-label="Location search results" hidden></select>
       <div class="field-grid">
         <label>AOI name<input id="aoi-name" type="text" maxlength="80" value="custom-aoi" /></label>
         <label>Driving side<select id="driving-side"><option value="right">right</option><option value="left">left</option></select></label>
@@ -514,6 +521,9 @@ function updateBackendActionState(): void {
   document.querySelectorAll<HTMLButtonElement>(".location-suggestion").forEach((button) => {
     button.disabled = staticDashboardMode;
   });
+  const locationInput = document.querySelector<HTMLInputElement>("#location-search");
+  if (locationInput) locationInput.disabled = staticDashboardMode;
+  if (staticDashboardMode) hideLocationSuggestions();
   const runButton = document.querySelector<HTMLButtonElement>("#run");
   if (runButton) runButton.disabled = staticDashboardMode || !selectedNetworkId;
 }
@@ -1020,8 +1030,10 @@ const aoiStatus = document.querySelector<HTMLOutputElement>("#aoi-status");
 const locationSearchInput = document.querySelector<HTMLInputElement>("#location-search");
 const locationSearchButton = document.querySelector<HTMLButtonElement>("#search-location");
 const locationSuggestions = document.querySelector<HTMLElement>("#location-suggestions");
-const locationResultsSelect = document.querySelector<HTMLSelectElement>("#location-results");
 let locationSearchResults: LocationSearchResult[] = [];
+let activeLocationSuggestionIndex = -1;
+let locationSearchDebounceId: number | undefined;
+let locationSearchRequestId = 0;
 
 function setAoiInputs(
   bbox: BoundingBox,
@@ -1077,15 +1089,8 @@ function networkStatusText(metadata: NetworkMetadata): string {
   return `${metadata.name} ready · ${metadata.edgeCount} edges · ${metadata.laneCount} lanes · ${metadata.junctionCount} junctions · ${metadata.drivingSide}-hand${reused}`;
 }
 
-function locationSearchLabel(result: LocationSearchResult): string {
-  const label = result.displayName.length > 72
-    ? `${result.displayName.slice(0, 69)}...`
-    : result.displayName;
-  return result.bboxAdjusted ? `${label} · safe AOI` : label;
-}
-
 function locationNameFromSearch(result: LocationSearchResult): string {
-  return (result.displayName.split(",")[0]?.trim() || "searched-aoi").slice(0, 80);
+  return (locationPrimaryLabel(result) || "searched-aoi").slice(0, 80);
 }
 
 function applyLocationSearchResult(result: LocationSearchResult): void {
@@ -1113,73 +1118,187 @@ function applyLocationSearchResult(result: LocationSearchResult): void {
   flyTopToBbox(result.bbox);
 }
 
-function showLocationResults(results: LocationSearchResult[]): void {
-  if (!locationResultsSelect) return;
-  locationResultsSelect.replaceChildren(
-    ...results.map((result, index) => new Option(locationSearchLabel(result), String(index))),
+function clearLocationAutocompleteDelay(): void {
+  if (locationSearchDebounceId !== undefined) {
+    window.clearTimeout(locationSearchDebounceId);
+    locationSearchDebounceId = undefined;
+  }
+}
+
+function setLocationSuggestionsExpanded(expanded: boolean): void {
+  locationSearchInput?.setAttribute("aria-expanded", String(expanded));
+}
+
+function hideLocationSuggestions(): void {
+  locationSuggestions?.replaceChildren();
+  if (locationSuggestions) locationSuggestions.hidden = true;
+  activeLocationSuggestionIndex = -1;
+  locationSearchInput?.removeAttribute("aria-activedescendant");
+  setLocationSuggestionsExpanded(false);
+}
+
+function setActiveLocationSuggestion(index: number): void {
+  activeLocationSuggestionIndex = index;
+  locationSuggestions
+    ?.querySelectorAll<HTMLButtonElement>(".location-suggestion")
+    .forEach((button, buttonIndex) => {
+      const isActive = buttonIndex === index;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", String(isActive));
+      if (isActive) locationSearchInput?.setAttribute("aria-activedescendant", button.id);
+    });
+  if (index < 0) locationSearchInput?.removeAttribute("aria-activedescendant");
+}
+
+function chooseLocationSearchResult(index: number): void {
+  const result = locationSearchResults[index];
+  if (!result) return;
+  if (locationSearchInput) locationSearchInput.value = locationPrimaryLabel(result);
+  hideLocationSuggestions();
+  applyLocationSearchResult(result);
+}
+
+function showLocationSuggestions(
+  results: LocationSearchResult[],
+  emptyMessage = "No matching location found.",
+): void {
+  if (!locationSuggestions) return;
+  if (results.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "location-suggestion-empty";
+    empty.textContent = emptyMessage;
+    locationSuggestions.replaceChildren(empty);
+    locationSuggestions.hidden = false;
+    activeLocationSuggestionIndex = -1;
+    setLocationSuggestionsExpanded(true);
+    return;
+  }
+
+  locationSuggestions.replaceChildren(
+    ...results.map((result, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.id = `location-suggestion-${index}`;
+      option.className = "location-suggestion";
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", "false");
+      option.title = result.displayName;
+      option.disabled = staticDashboardMode;
+
+      const primary = document.createElement("span");
+      primary.className = "location-suggestion-primary";
+      primary.textContent = locationPrimaryLabel(result);
+      option.append(primary);
+
+      const secondary = document.createElement("span");
+      secondary.className = "location-suggestion-secondary";
+      secondary.textContent = locationSecondaryLabel(result);
+      option.append(secondary);
+
+      option.addEventListener("mousedown", (event) => event.preventDefault());
+      option.addEventListener("click", () => chooseLocationSearchResult(index));
+      return option;
+    }),
   );
-  locationResultsSelect.hidden = results.length <= 1;
-  locationResultsSelect.value = "0";
+  locationSuggestions.hidden = false;
+  setLocationSuggestionsExpanded(true);
+  setActiveLocationSuggestion(0);
+}
+
+async function fetchLocationSuggestions(query: string, showSearchingMessage = false): Promise<void> {
+  const requestId = ++locationSearchRequestId;
+  if (showSearchingMessage && aoiStatus) aoiStatus.value = `Searching ${query}...`;
+  try {
+    const results = await searchLocations(query);
+    if (requestId !== locationSearchRequestId) return;
+    locationSearchResults = results;
+    showLocationSuggestions(results);
+    if (aoiStatus) {
+      aoiStatus.value = results.length > 0
+        ? "Choose one location suggestion, then build the network."
+        : "No location found.";
+    }
+  } catch (error) {
+    if (requestId !== locationSearchRequestId) return;
+    locationSearchResults = [];
+    hideLocationSuggestions();
+    if (aoiStatus) {
+      aoiStatus.value = error instanceof Error ? error.message : "Location search failed";
+    }
+  }
 }
 
 async function runLocationSearch(): Promise<void> {
   const query = locationSearchInput?.value.trim() ?? "";
-  if (query.length < 2) {
-    if (aoiStatus) aoiStatus.value = "Enter at least 2 characters to search.";
+  if (!shouldSearchAutocomplete(query)) {
+    hideLocationSuggestions();
+    if (aoiStatus) {
+      aoiStatus.value = `Enter at least ${LOCATION_AUTOCOMPLETE_MIN_LENGTH} characters to search.`;
+    }
     return;
   }
+  clearLocationAutocompleteDelay();
   if (locationSearchButton) locationSearchButton.disabled = true;
-  if (aoiStatus) aoiStatus.value = `Searching ${query}...`;
   try {
-    locationSearchResults = await searchLocations(query);
-    showLocationResults(locationSearchResults);
-    const first = locationSearchResults[0];
-    if (!first) {
-      if (aoiStatus) aoiStatus.value = "No location found.";
-      return;
-    }
-    applyLocationSearchResult(first);
-  } catch (error) {
-    if (aoiStatus) {
-      aoiStatus.value = error instanceof Error ? error.message : "Location search failed";
-    }
+    await fetchLocationSuggestions(query, true);
   } finally {
     if (locationSearchButton) locationSearchButton.disabled = staticDashboardMode;
   }
 }
 
-function renderLocationSuggestions(): void {
-  if (!locationSuggestions) return;
-  locationSuggestions.replaceChildren(
-    ...LOCATION_SEARCH_SUGGESTIONS.map((suggestion) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "location-suggestion";
-      button.textContent = suggestion.label;
-      button.title = `Search ${suggestion.query}`;
-      button.disabled = staticDashboardMode;
-      button.addEventListener("click", () => {
-        if (locationSearchInput) locationSearchInput.value = suggestion.query;
-        void runLocationSearch();
-      });
-      return button;
-    }),
-  );
+function queueLocationAutocompleteSearch(): void {
+  clearLocationAutocompleteDelay();
+  const query = locationSearchInput?.value.trim() ?? "";
+  locationSearchRequestId += 1;
+  if (!shouldSearchAutocomplete(query) || staticDashboardMode) {
+    locationSearchResults = [];
+    hideLocationSuggestions();
+    return;
+  }
+  locationSearchDebounceId = window.setTimeout(() => {
+    void fetchLocationSuggestions(query);
+  }, LOCATION_AUTOCOMPLETE_DEBOUNCE_MS);
 }
-
-renderLocationSuggestions();
 
 locationSearchButton?.addEventListener("click", () => {
   void runLocationSearch();
 });
+locationSearchInput?.addEventListener("input", () => {
+  queueLocationAutocompleteSearch();
+});
 locationSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" && !locationSuggestions?.hidden && locationSearchResults.length > 0) {
+    event.preventDefault();
+    setActiveLocationSuggestion(
+      Math.min(activeLocationSuggestionIndex + 1, locationSearchResults.length - 1),
+    );
+    return;
+  }
+  if (event.key === "ArrowUp" && !locationSuggestions?.hidden && locationSearchResults.length > 0) {
+    event.preventDefault();
+    setActiveLocationSuggestion(Math.max(activeLocationSuggestionIndex - 1, 0));
+    return;
+  }
+  if (event.key === "Escape") {
+    hideLocationSuggestions();
+    return;
+  }
   if (event.key !== "Enter") return;
   event.preventDefault();
+  if (!locationSuggestions?.hidden && activeLocationSuggestionIndex >= 0) {
+    chooseLocationSearchResult(activeLocationSuggestionIndex);
+    return;
+  }
   void runLocationSearch();
 });
-locationResultsSelect?.addEventListener("change", () => {
-  const result = locationSearchResults[Number(locationResultsSelect.value)];
-  if (result) applyLocationSearchResult(result);
+locationSearchInput?.addEventListener("focus", () => {
+  const query = locationSearchInput.value.trim();
+  if (locationSearchResults.length > 0 && shouldSearchAutocomplete(query) && !staticDashboardMode) {
+    showLocationSuggestions(locationSearchResults);
+  }
+});
+locationSearchInput?.addEventListener("blur", () => {
+  window.setTimeout(() => hideLocationSuggestions(), 120);
 });
 
 function applySelectedNetwork(metadata: NetworkMetadata): void {

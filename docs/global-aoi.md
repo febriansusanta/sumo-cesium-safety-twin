@@ -71,9 +71,10 @@ download, `netconvert`, random synthetic demand and browser playback. The backen
 AOIs above `max_bbox_area_km2` or `max_bbox_span_degrees`.
 
 Location search uses the local FastAPI server as a Nominatim/OpenStreetMap proxy. It sends
-requests only after explicit user searches, includes an identifying User-Agent, caches
-responses in `data/cache/location-search`, offers local study-area suggestion chips, and
-narrows very large place results to a small AOI around the returned center point.
+requests after a short autocomplete debounce or explicit search, includes an identifying
+User-Agent, caches responses in `data/cache/location-search`, displays candidate locations
+as a clickable suggestion menu, and narrows very large place results to a small AOI around
+the returned center point.
 
 Changing the AOI does not calibrate demand, signal timing, driver behaviour or safety
 thresholds. TTC/DRAC/PET outputs remain surrogate safety indicators for visual analysis, not
