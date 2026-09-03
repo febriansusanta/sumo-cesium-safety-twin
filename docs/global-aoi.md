@@ -6,7 +6,7 @@ a small fallback/sample bbox, but generated simulations should use an explicit A
 ## Dashboard workflow
 
 1. Open the localhost dashboard.
-2. In `Study area`, enter a small bbox or click `Use current view`.
+2. In `Study area`, search for a location, enter a small bbox, or click `Use current view`.
 3. Choose `right` or `left` driving side.
 4. Click `Build network`.
 5. Wait until the network status is `ready`.
@@ -50,6 +50,7 @@ data and older scripts.
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /api/locations/search?q=...` | Search a place name and return a small buildable AOI bbox. |
 | `POST /api/networks` | Queue or reuse a small AOI network build. |
 | `GET /api/networks` | List registered AOI networks. |
 | `GET /api/networks/{network_id}` | Read network metadata. |
@@ -68,6 +69,11 @@ for creating left-hand traffic networks.
 This remains a compact exploratory prototype. The AOI must stay small enough for direct OSM
 download, `netconvert`, random synthetic demand and browser playback. The backend rejects
 AOIs above `max_bbox_area_km2` or `max_bbox_span_degrees`.
+
+Location search uses the local FastAPI server as a Nominatim/OpenStreetMap proxy. It sends
+requests only after explicit user searches, includes an identifying User-Agent, caches
+responses in `data/cache/location-search`, and narrows very large place results to a small
+AOI around the returned center point.
 
 Changing the AOI does not calibrate demand, signal timing, driver behaviour or safety
 thresholds. TTC/DRAC/PET outputs remain surrogate safety indicators for visual analysis, not

@@ -1,6 +1,9 @@
 from fastapi.testclient import TestClient
 
+import app.main as main_module
 from app.main import app
+from app.models.location_search import LocationSearchResult
+from app.models.scenario import BoundingBox
 
 
 def test_health() -> None:
@@ -38,3 +41,28 @@ def test_safety_presets_are_available() -> None:
         "reduced-reaction-margin",
     }
     assert presets["reduced-reaction-margin"]["scenario"]["vehicle"]["tau"] == 0.7
+
+
+def test_location_search_endpoint_returns_aoi_bbox(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def fake_search(*_args, **_kwargs) -> list[LocationSearchResult]:  # type: ignore[no-untyped-def]
+        return [
+            LocationSearchResult(
+                place_id="1",
+                display_name="Nanke, Tainan, Taiwan",
+                longitude=120.294,
+                latitude=23.106,
+                bbox=BoundingBox(
+                    west=120.2939,
+                    south=23.1055,
+                    east=120.2955,
+                    north=23.1067,
+                ),
+                bbox_area_km2=0.03,
+            )
+        ]
+
+    monkeypatch.setattr(main_module, "search_locations", fake_search)
+    with TestClient(app) as client:
+        response = client.get("/api/locations/search", params={"q": "Nanke"})
+    assert response.status_code == 200
+    assert response.json()[0]["bbox"]["west"] == 120.2939

@@ -6,6 +6,7 @@ import {
   fetchNetwork,
   fetchPointOverlays,
   fetchTrajectories,
+  searchLocations,
 } from "../src/api";
 
 describe("fetchHealth", () => {
@@ -145,6 +146,36 @@ describe("fetchPointOverlays", () => {
     await expect(fetchPointOverlays(fetcher)).resolves.toMatchObject({
       type: "FeatureCollection",
     });
+  });
+});
+
+describe("searchLocations", () => {
+  it("accepts location search results with a buildable bbox", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            placeId: "1",
+            displayName: "Nanke, Tainan, Taiwan",
+            longitude: 120.294,
+            latitude: 23.106,
+            bbox: { west: 120.2939, south: 23.1055, east: 120.2955, north: 23.1067 },
+            bboxAdjusted: false,
+            bboxAreaKm2: 0.03,
+            category: "place",
+            type: "industrial",
+            osmType: "relation",
+            osmId: "456",
+            source: "Nominatim/OpenStreetMap",
+          },
+        ]),
+        { status: 200 },
+      ),
+    );
+    await expect(searchLocations("Nanke", fetcher)).resolves.toMatchObject([
+      { displayName: "Nanke, Tainan, Taiwan", bboxAdjusted: false },
+    ]);
+    expect(fetcher).toHaveBeenCalledWith("/api/locations/search?q=Nanke&limit=5");
   });
 });
 

@@ -13,6 +13,7 @@ import {
   fetchRun,
   fetchRuns,
   fetchSafetyEvents,
+  searchLocations,
   fetchTimeSeries,
   fetchTrajectories,
   fetchSummary,
@@ -25,6 +26,7 @@ import {
 } from "./api";
 import type {
   BoundingBox,
+  LocationSearchResult,
   NetworkBuildRequest,
   NetworkGeoJson,
   NetworkMetadata,
@@ -74,6 +76,12 @@ root.innerHTML = `
   <main id="main" class="dashboard">
     <aside class="panel panel-left" aria-labelledby="study-area-heading scenario-heading">
       <h2 id="study-area-heading">Study area</h2>
+      <label for="location-search">Search location</label>
+      <div class="search-row">
+        <input id="location-search" type="search" maxlength="120" placeholder="Nanke, Tainan" />
+        <button id="search-location" type="button">Search</button>
+      </div>
+      <select id="location-results" class="location-results" aria-label="Location search results" hidden></select>
       <div class="field-grid">
         <label>AOI name<input id="aoi-name" type="text" maxlength="80" value="custom-aoi" /></label>
         <label>Driving side<select id="driving-side"><option value="right">right</option><option value="left">left</option></select></label>
@@ -308,10 +316,7 @@ function stopOrbit(): void {
   setOrbitPressed(false);
 }
 
-function activateTopView(): void {
-  stopOrbit();
-  const bbox = activeBbox();
-  if (!bbox) return;
+function flyTopToBbox(bbox: BoundingBox): void {
   viewer.trackedEntity = undefined;
   viewer.camera.flyTo({
     destination: destinationForBbox(bbox),
@@ -322,6 +327,13 @@ function activateTopView(): void {
     },
     duration: 0.8,
   });
+}
+
+function activateTopView(): void {
+  stopOrbit();
+  const bbox = activeBbox();
+  if (!bbox) return;
+  flyTopToBbox(bbox);
 }
 
 function activateNorthUpView(): void {
@@ -492,6 +504,7 @@ function updateBackendActionState(): void {
     "#load-local-data",
     "#use-current-view",
     "#build-network",
+    "#search-location",
   ]) {
     const button = document.querySelector<HTMLButtonElement>(selector);
     if (button) button.disabled = staticDashboardMode;
@@ -818,6 +831,37 @@ document.querySelector<HTMLButtonElement>("#next-event")?.addEventListener("clic
   locateEvent(currentEventIndex + 1),
 );
 
+function clearLoadedRunVisuals(message = "No run loaded."): void {
+  for (const entity of dynamicEntities) viewer.entities.remove(entity);
+  dynamicEntities = [];
+  loadedTrajectories = [];
+  safetyEvents = [];
+  eventsById.clear();
+  vehicleEntities.clear();
+  eventEntities.clear();
+  currentEventIndex = -1;
+  viewer.selectedEntity = undefined;
+  eventPanel?.setAttribute("hidden", "");
+  playback.setDuration(0);
+  if (summaryPanel) {
+    const empty = document.createElement("p");
+    empty.textContent = message;
+    summaryPanel.replaceChildren(empty);
+  }
+  if (comparison) comparison.replaceChildren();
+  if (eventTable) {
+    const row = document.createElement("tr");
+    const cell = row.insertCell();
+    cell.colSpan = 4;
+    cell.textContent = "Load a completed run";
+    eventTable.replaceChildren(row);
+  }
+  if (vehicleCount) vehicleCount.textContent = "—";
+  if (selectedVehicle) selectedVehicle.textContent = "None";
+  if (vehicleChart) vehicleChart.textContent = "Select a vehicle to inspect speed and acceleration.";
+  if (runStatus) runStatus.textContent = message;
+}
+
 async function loadRun(runId: string, scenarioName: string): Promise<void> {
   if (runStatus) runStatus.textContent = `Loading ${scenarioName}…`;
   const [trajectories, events, timeseries, summary] = await Promise.all([
@@ -968,6 +1012,10 @@ const textInput = (id: string): HTMLInputElement => {
 };
 
 const aoiStatus = document.querySelector<HTMLOutputElement>("#aoi-status");
+const locationSearchInput = document.querySelector<HTMLInputElement>("#location-search");
+const locationSearchButton = document.querySelector<HTMLButtonElement>("#search-location");
+const locationResultsSelect = document.querySelector<HTMLSelectElement>("#location-results");
+let locationSearchResults: LocationSearchResult[] = [];
 
 function setAoiInputs(
   bbox: BoundingBox,
@@ -1023,6 +1071,90 @@ function networkStatusText(metadata: NetworkMetadata): string {
   return `${metadata.name} ready · ${metadata.edgeCount} edges · ${metadata.laneCount} lanes · ${metadata.junctionCount} junctions · ${metadata.drivingSide}-hand${reused}`;
 }
 
+function locationSearchLabel(result: LocationSearchResult): string {
+  const label = result.displayName.length > 72
+    ? `${result.displayName.slice(0, 69)}...`
+    : result.displayName;
+  return result.bboxAdjusted ? `${label} · safe AOI` : label;
+}
+
+function locationNameFromSearch(result: LocationSearchResult): string {
+  return (result.displayName.split(",")[0]?.trim() || "searched-aoi").slice(0, 80);
+}
+
+function applyLocationSearchResult(result: LocationSearchResult): void {
+  stopOrbit();
+  selectedNetwork = undefined;
+  selectedNetworkId = undefined;
+  currentNetwork = undefined;
+  mappedFeatureCount = undefined;
+  clearLoadedRunVisuals("Build a network for the selected location.");
+  clearNetworkLayers();
+  setAoiInputs(
+    result.bbox,
+    locationNameFromSearch(result),
+    selectInput("driving-side").value === "left" ? "left" : "right",
+  );
+  if (locationStatus) locationStatus.textContent = locationNameFromSearch(result);
+  if (networkStatus) networkStatus.textContent = "Location selected; build the network";
+  if (aoiStatus) {
+    const area = result.bboxAreaKm2.toFixed(3);
+    aoiStatus.value = result.bboxAdjusted
+      ? `Search result adjusted to safe AOI · ${area} km2`
+      : `Location found · ${area} km2`;
+  }
+  updateBackendActionState();
+  flyTopToBbox(result.bbox);
+}
+
+function showLocationResults(results: LocationSearchResult[]): void {
+  if (!locationResultsSelect) return;
+  locationResultsSelect.replaceChildren(
+    ...results.map((result, index) => new Option(locationSearchLabel(result), String(index))),
+  );
+  locationResultsSelect.hidden = results.length <= 1;
+  locationResultsSelect.value = "0";
+}
+
+async function runLocationSearch(): Promise<void> {
+  const query = locationSearchInput?.value.trim() ?? "";
+  if (query.length < 2) {
+    if (aoiStatus) aoiStatus.value = "Enter at least 2 characters to search.";
+    return;
+  }
+  if (locationSearchButton) locationSearchButton.disabled = true;
+  if (aoiStatus) aoiStatus.value = `Searching ${query}...`;
+  try {
+    locationSearchResults = await searchLocations(query);
+    showLocationResults(locationSearchResults);
+    const first = locationSearchResults[0];
+    if (!first) {
+      if (aoiStatus) aoiStatus.value = "No location found.";
+      return;
+    }
+    applyLocationSearchResult(first);
+  } catch (error) {
+    if (aoiStatus) {
+      aoiStatus.value = error instanceof Error ? error.message : "Location search failed";
+    }
+  } finally {
+    if (locationSearchButton) locationSearchButton.disabled = staticDashboardMode;
+  }
+}
+
+locationSearchButton?.addEventListener("click", () => {
+  void runLocationSearch();
+});
+locationSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  void runLocationSearch();
+});
+locationResultsSelect?.addEventListener("change", () => {
+  const result = locationSearchResults[Number(locationResultsSelect.value)];
+  if (result) applyLocationSearchResult(result);
+});
+
 function applySelectedNetwork(metadata: NetworkMetadata): void {
   selectedNetwork = metadata;
   selectedNetworkId = metadata.status === "ready" ? metadata.networkId : undefined;
@@ -1038,6 +1170,7 @@ function markAoiChanged(): void {
   if (!selectedNetwork && !selectedNetworkId) return;
   selectedNetwork = undefined;
   selectedNetworkId = undefined;
+  clearLoadedRunVisuals("Build a network for the changed AOI.");
   if (aoiStatus) aoiStatus.value = "AOI changed. Build the network before running.";
   if (networkStatus) networkStatus.textContent = "AOI changed; build the selected network";
   if (locationStatus) locationStatus.textContent = textInput("aoi-name").value || "Custom AOI";

@@ -59,6 +59,23 @@ export type NetworkBuildRequest = {
   forceRefresh?: boolean;
 };
 
+const locationSearchResultSchema = z.object({
+  placeId: z.string(),
+  displayName: z.string(),
+  longitude: z.number(),
+  latitude: z.number(),
+  bbox: bboxSchema,
+  bboxAdjusted: z.boolean(),
+  bboxAreaKm2: z.number(),
+  category: z.string().nullable(),
+  type: z.string().nullable(),
+  osmType: z.string().nullable(),
+  osmId: z.string().nullable(),
+  source: z.string(),
+});
+
+export type LocationSearchResult = z.infer<typeof locationSearchResultSchema>;
+
 const runSchema = z.object({
   runId: z.string(),
   status: z.enum(["queued", "preparing", "running", "processing", "completed", "failed"]),
@@ -261,6 +278,19 @@ export async function createNetwork(
   });
   if (!response.ok) throw new Error(`Network build request failed (${response.status})`);
   return networkMetadataSchema.parse(await response.json());
+}
+
+export async function searchLocations(
+  query: string,
+  fetcher: typeof fetch = fetch,
+): Promise<LocationSearchResult[]> {
+  const params = new URLSearchParams({ q: query, limit: "5" });
+  return fetchJson(
+    `/api/locations/search?${params.toString()}`,
+    "Location search",
+    z.array(locationSearchResultSchema),
+    fetcher,
+  );
 }
 
 export async function fetchNetworks(fetcher: typeof fetch = fetch): Promise<NetworkMetadata[]> {

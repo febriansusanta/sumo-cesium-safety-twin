@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 
 from .config import REPO_ROOT, get_settings, public_config
 from .jobs import RunConflictError, RunManager, load_summary
+from .models.location_search import LocationSearchResult
 from .models.network import NetworkBuildRequest, NetworkMetadata
 from .models.run import RunCreateRequest, RunMetadata
 from .models.scenario import ScenarioConfig
@@ -22,6 +23,11 @@ from .services.local_data_service import (
     LocalDataImportError,
     discover_local_datasets,
     import_local_dataset,
+)
+from .services.location_search_service import (
+    LocationSearchError,
+    LocationSearchQueryError,
+    search_locations,
 )
 from .services.network_registry_service import NetworkRegistryError
 from .services.network_service import latest_geojson
@@ -115,6 +121,19 @@ def point_overlays() -> dict[str, object]:
         return load_point_overlays(get_settings())
     except PointOverlayError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get("/api/locations/search", response_model=list[LocationSearchResult], tags=["network"])
+def search_location(
+    q: Annotated[str, Query(min_length=2, max_length=120)],
+    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+) -> list[LocationSearchResult]:
+    try:
+        return search_locations(get_settings(), q, limit=limit)
+    except LocationSearchQueryError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except LocationSearchError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 def _manager(request: Request) -> RunManager:

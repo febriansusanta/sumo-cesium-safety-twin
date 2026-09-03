@@ -94,8 +94,11 @@ On Windows, every delivery task is available without Make:
 
 `config/default.yaml` still contains a small NCKU/Tainan bbox, but it is now only the
 fallback/sample AOI for scripts and first-time setup. In the localhost dashboard, use the
-`Study area` panel to enter a bbox, copy the current Cesium view, choose right- or left-hand
-driving, and build an explicit network before running generated scenarios. AOI limits in
+`Study area` panel to search for a location, enter a bbox manually, copy the current Cesium
+view, choose right- or left-hand driving, and build an explicit network before running
+generated scenarios. Search results are fetched by the local FastAPI server through
+Nominatim/OpenStreetMap and cached under `data/cache/location-search`; the app sends one
+request only when the user clicks `Search` or presses Enter. AOI limits in
 `config/default.yaml` guard against accidental city-scale downloads.
 
 Registered AOI networks live under `data/networks/{network_id}` with `source.osm.xml`,
@@ -103,11 +106,10 @@ Registered AOI networks live under `data/networks/{network_id}` with `source.osm
 The older `data/network/` path remains as a compatibility cache for legacy demo/import
 flows.
 
-The default dashboard basemap is global CARTO Dark. NLSC Taiwan remains an optional
-basemap, not a global default. The `Mapbox 3D Buildings` basemap uses Mapbox Streets
-imagery and decodes the Mapbox Streets v8 `building` vector-tile layer into Cesium
-extruded polygons around the active SUMO network. To enable it, set `VITE_MAPBOX_TOKEN` in
-local `.env`; do not commit real tokens.
+The default dashboard basemap is NLSC Taiwan. The `Mapbox 3D Buildings` basemap uses
+Mapbox Streets imagery and decodes the Mapbox Streets v8 `building` vector-tile layer into
+Cesium extruded polygons around the active SUMO network. To enable it, set
+`VITE_MAPBOX_TOKEN` in local `.env`; do not commit real tokens.
 
 Default services bind only to `127.0.0.1`; change `API_PORT` and `WEB_PORT` in `.env` if
 required.

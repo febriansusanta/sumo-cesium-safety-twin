@@ -53,6 +53,7 @@ The backend is a FastAPI app in `api/app/`.
 | Service | What It Does |
 | --- | --- |
 | `osm_service.py` | Downloads and caches OSM XML for a specific AOI location or the fallback configured bbox. |
+| `location_search_service.py` | Searches Nominatim/OpenStreetMap by place name, caches results and returns small buildable AOI bboxes. |
 | `network_service.py` | Runs `netconvert`, applies right/left driving-side options, validates SUMO networks and exports network GeoJSON for Cesium. |
 | `network_registry_service.py` | Stores explicit AOI networks under `data/networks/{network_id}` and resolves network metadata, paths and checksums. |
 | `point_overlay_service.py` | Reads local WGS84 point shapefiles from `Data/sumo` and serves real/SUMO comparison points as GeoJSON. |
@@ -94,7 +95,7 @@ as `/api/runs/{run_id}/trajectories`, `/api/runs/{run_id}/safety-events` and
 
 ### Flow A: Build and Run a New Scenario
 
-1. User chooses a small AOI in the `Study area` panel and clicks `Build network`.
+1. User searches for a place, enters a small AOI, or copies the current map view in the `Study area` panel, then clicks `Build network`.
 2. `web/src/main.ts` calls `createNetwork()` and polls `fetchNetworkStatus()`.
 3. `api/app/network_jobs.py` downloads OSM, runs `netconvert` and registers a ready network.
 4. User changes scenario settings in the dashboard.
@@ -152,6 +153,7 @@ Typical files inside a run directory:
 | `GET /api/config` | Read public project defaults and capabilities. |
 | `GET /api/environment` | Read detected local tool versions and simulation mode. |
 | `GET /api/network` | Load the prepared network GeoJSON. |
+| `GET /api/locations/search?q=...` | Search a place name and return candidate AOI bboxes. |
 | `POST /api/networks` | Queue or reuse an explicit AOI network build. |
 | `GET /api/networks` | List registered AOI networks. |
 | `GET /api/networks/{network_id}/status` | Poll AOI network build status. |
