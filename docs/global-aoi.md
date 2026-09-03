@@ -70,11 +70,13 @@ This remains a compact exploratory prototype. The AOI must stay small enough for
 download, `netconvert`, random synthetic demand and browser playback. The backend rejects
 AOIs above `max_bbox_area_km2` or `max_bbox_span_degrees`.
 
-Location search uses the local FastAPI server as a Nominatim/OpenStreetMap proxy. It sends
-requests after a short autocomplete debounce or explicit search, includes an identifying
-User-Agent, caches responses in `data/cache/location-search`, displays candidate locations
-as a clickable suggestion menu, and narrows very large place results to a small AOI around
-the returned center point.
+Location search uses the local FastAPI server as a Nominatim/OpenStreetMap proxy in
+localhost mode. It sends requests after a short autocomplete debounce or explicit search,
+includes an identifying User-Agent, caches responses in `data/cache/location-search`,
+displays candidate locations as a clickable suggestion menu, and narrows very large place
+results to a small AOI around the returned center point. In GitHub Pages mode, the input
+remains editable and uses Mapbox Search Box autocomplete when the static build includes
+`VITE_MAPBOX_TOKEN`; SUMO network building still requires the localhost backend.
 
 Changing the AOI does not calibrate demand, signal timing, driver behaviour or safety
 thresholds. TTC/DRAC/PET outputs remain surrogate safety indicators for visual analysis, not

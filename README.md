@@ -96,10 +96,11 @@ On Windows, every delivery task is available without Make:
 fallback/sample AOI for scripts and first-time setup. In the localhost dashboard, use the
 `Study area` panel to search for a location, enter a bbox manually, copy the current Cesium
 view, choose right- or left-hand driving, and build an explicit network before running
-generated scenarios. Search results are fetched by the local FastAPI server through
-Nominatim/OpenStreetMap and cached under `data/cache/location-search`; the app shows an
-autocomplete dropdown after a short debounce while typing, and the chosen suggestion fills
-the AOI fields. AOI limits in
+generated scenarios. In localhost mode, search results are fetched by the local FastAPI
+server through Nominatim/OpenStreetMap and cached under `data/cache/location-search`. In
+GitHub Pages mode, the same search box stays editable and uses Mapbox Search Box
+autocomplete when `VITE_MAPBOX_TOKEN` is available. The chosen suggestion fills the AOI
+fields. AOI limits in
 `config/default.yaml` guard against accidental city-scale downloads.
 
 Registered AOI networks live under `data/networks/{network_id}` with `source.osm.xml`,

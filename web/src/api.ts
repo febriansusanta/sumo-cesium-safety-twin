@@ -76,6 +76,56 @@ const locationSearchResultSchema = z.object({
 
 export type LocationSearchResult = z.infer<typeof locationSearchResultSchema>;
 
+const mapboxSuggestionSchema = z
+  .object({
+    mapbox_id: z.string(),
+    name: z.string(),
+    full_address: z.string().nullable().optional(),
+    place_formatted: z.string().nullable().optional(),
+    feature_type: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const mapboxSuggestResponseSchema = z
+  .object({
+    suggestions: z.array(mapboxSuggestionSchema),
+  })
+  .passthrough();
+
+const mapboxRetrieveResponseSchema = z
+  .object({
+    type: z.literal("FeatureCollection"),
+    features: z.array(
+      z
+        .object({
+          type: z.literal("Feature"),
+          geometry: z.object({
+            type: z.literal("Point"),
+            coordinates: z.tuple([z.number(), z.number()]),
+          }),
+          properties: z
+            .object({
+              name: z.string(),
+              mapbox_id: z.string(),
+              full_address: z.string().nullable().optional(),
+              place_formatted: z.string().nullable().optional(),
+              feature_type: z.string().nullable().optional(),
+            })
+            .passthrough(),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+
+export interface MapboxLocationSuggestion {
+  mapboxId: string;
+  name: string;
+  fullAddress?: string;
+  placeFormatted?: string;
+  featureType?: string;
+}
+
 const runSchema = z.object({
   runId: z.string(),
   status: z.enum(["queued", "preparing", "running", "processing", "completed", "failed"]),
@@ -291,6 +341,97 @@ export async function searchLocations(
     z.array(locationSearchResultSchema),
     fetcher,
   );
+}
+
+function mapboxUrl(path: string, params: URLSearchParams): string {
+  return `https://api.mapbox.com/search/searchbox/v1/${path}?${params.toString()}`;
+}
+
+function centeredBbox(longitude: number, latitude: number, halfSideKm = 0.4): BoundingBox {
+  const latitudeDelta = halfSideKm / 110.574;
+  const longitudeDelta = halfSideKm / (111.32 * Math.max(0.2, Math.cos((latitude * Math.PI) / 180)));
+  return {
+    west: Math.max(-180, longitude - longitudeDelta),
+    south: Math.max(-90, latitude - latitudeDelta),
+    east: Math.min(180, longitude + longitudeDelta),
+    north: Math.min(90, latitude + latitudeDelta),
+  };
+}
+
+function bboxAreaKm2(bbox: BoundingBox): number {
+  const meanLat = ((bbox.south + bbox.north) / 2) * (Math.PI / 180);
+  const width = (bbox.east - bbox.west) * 111.32 * Math.cos(meanLat);
+  const height = (bbox.north - bbox.south) * 110.574;
+  return width * height;
+}
+
+export async function searchMapboxLocationSuggestions(
+  query: string,
+  accessToken: string,
+  sessionToken: string,
+  fetcher: typeof fetch = fetch,
+): Promise<MapboxLocationSuggestion[]> {
+  if (!accessToken.trim()) throw new Error("Mapbox token is not configured");
+  const params = new URLSearchParams({
+    q: query,
+    access_token: accessToken,
+    session_token: sessionToken,
+    limit: "5",
+    language: "en,id,zh-Hant",
+    proximity: "ip",
+    types: "poi,address,street,neighborhood,locality,place,district",
+  });
+  const response = await fetcher(mapboxUrl("suggest", params));
+  if (!response.ok) throw new Error(`Mapbox location suggestion failed (${response.status})`);
+  const payload = mapboxSuggestResponseSchema.parse(await response.json());
+  return payload.suggestions.map((suggestion) => ({
+    mapboxId: suggestion.mapbox_id,
+    name: suggestion.name,
+    fullAddress: suggestion.full_address ?? undefined,
+    placeFormatted: suggestion.place_formatted ?? undefined,
+    featureType: suggestion.feature_type ?? undefined,
+  }));
+}
+
+export async function retrieveMapboxLocationSuggestion(
+  suggestion: MapboxLocationSuggestion,
+  accessToken: string,
+  sessionToken: string,
+  fetcher: typeof fetch = fetch,
+): Promise<LocationSearchResult> {
+  if (!accessToken.trim()) throw new Error("Mapbox token is not configured");
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    session_token: sessionToken,
+    language: "en,id,zh-Hant",
+  });
+  const response = await fetcher(
+    mapboxUrl(`retrieve/${encodeURIComponent(suggestion.mapboxId)}`, params),
+  );
+  if (!response.ok) throw new Error(`Mapbox location retrieve failed (${response.status})`);
+  const payload = mapboxRetrieveResponseSchema.parse(await response.json());
+  const feature = payload.features[0];
+  if (!feature) throw new Error("Mapbox location retrieve returned no feature");
+  const [longitude, latitude] = feature.geometry.coordinates;
+  const properties = feature.properties;
+  const bbox = centeredBbox(longitude, latitude);
+  const placeText = properties.full_address ?? properties.place_formatted;
+  const displayName = [properties.name, placeText].filter(Boolean).join(", ") || properties.name;
+
+  return {
+    placeId: properties.mapbox_id,
+    displayName,
+    longitude,
+    latitude,
+    bbox,
+    bboxAdjusted: true,
+    bboxAreaKm2: bboxAreaKm2(bbox),
+    category: "mapbox",
+    type: properties.feature_type ?? suggestion.featureType ?? null,
+    osmType: null,
+    osmId: null,
+    source: "Mapbox Search Box",
+  };
 }
 
 export async function fetchNetworks(fetcher: typeof fetch = fetch): Promise<NetworkMetadata[]> {

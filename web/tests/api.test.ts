@@ -6,7 +6,9 @@ import {
   fetchNetwork,
   fetchPointOverlays,
   fetchTrajectories,
+  retrieveMapboxLocationSuggestion,
   searchLocations,
+  searchMapboxLocationSuggestions,
 } from "../src/api";
 
 describe("fetchHealth", () => {
@@ -176,6 +178,74 @@ describe("searchLocations", () => {
       { displayName: "Nanke, Tainan, Taiwan", bboxAdjusted: false },
     ]);
     expect(fetcher).toHaveBeenCalledWith("/api/locations/search?q=Nanke&limit=5");
+  });
+});
+
+describe("Mapbox location search", () => {
+  it("parses public autocomplete suggestions", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          suggestions: [
+            {
+              mapbox_id: "dXJuOm1ieHBvaTox",
+              name: "Universitas Gadjah Mada",
+              full_address: "Bulaksumur, Sleman, Daerah Istimewa Yogyakarta, Indonesia",
+              place_formatted: "Sleman, Daerah Istimewa Yogyakarta, Indonesia",
+              feature_type: "poi",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(searchMapboxLocationSuggestions("UGM", "token", "session", fetcher)).resolves.toMatchObject([
+      {
+        mapboxId: "dXJuOm1ieHBvaTox",
+        name: "Universitas Gadjah Mada",
+        featureType: "poi",
+      },
+    ]);
+    expect(fetcher.mock.calls[0]?.[0]).toContain("/suggest?");
+  });
+
+  it("retrieves a suggestion as a buildable dashboard AOI", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              geometry: { type: "Point", coordinates: [110.377, -7.771] },
+              properties: {
+                name: "Universitas Gadjah Mada",
+                mapbox_id: "dXJuOm1ieHBvaTox",
+                full_address: "Bulaksumur, Sleman, Daerah Istimewa Yogyakarta, Indonesia",
+                place_formatted: "Sleman, Daerah Istimewa Yogyakarta, Indonesia",
+                feature_type: "poi",
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(
+      retrieveMapboxLocationSuggestion(
+        { mapboxId: "dXJuOm1ieHBvaTox", name: "Universitas Gadjah Mada", featureType: "poi" },
+        "token",
+        "session",
+        fetcher,
+      ),
+    ).resolves.toMatchObject({
+      displayName: "Universitas Gadjah Mada, Bulaksumur, Sleman, Daerah Istimewa Yogyakarta, Indonesia",
+      source: "Mapbox Search Box",
+      bboxAdjusted: true,
+    });
+    expect(fetcher.mock.calls[0]?.[0]).toContain("/retrieve/dXJuOm1ieHBvaTox?");
   });
 });
 

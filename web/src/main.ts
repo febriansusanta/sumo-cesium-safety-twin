@@ -13,7 +13,9 @@ import {
   fetchRun,
   fetchRuns,
   fetchSafetyEvents,
+  retrieveMapboxLocationSuggestion,
   searchLocations,
+  searchMapboxLocationSuggestions,
   fetchTimeSeries,
   fetchTrajectories,
   fetchSummary,
@@ -27,6 +29,7 @@ import {
 import type {
   BoundingBox,
   LocationSearchResult,
+  MapboxLocationSuggestion,
   NetworkBuildRequest,
   NetworkGeoJson,
   NetworkMetadata,
@@ -513,17 +516,10 @@ function updateBackendActionState(): void {
     "#load-local-data",
     "#use-current-view",
     "#build-network",
-    "#search-location",
   ]) {
     const button = document.querySelector<HTMLButtonElement>(selector);
     if (button) button.disabled = staticDashboardMode;
   }
-  document.querySelectorAll<HTMLButtonElement>(".location-suggestion").forEach((button) => {
-    button.disabled = staticDashboardMode;
-  });
-  const locationInput = document.querySelector<HTMLInputElement>("#location-search");
-  if (locationInput) locationInput.disabled = staticDashboardMode;
-  if (staticDashboardMode) hideLocationSuggestions();
   const runButton = document.querySelector<HTMLButtonElement>("#run");
   if (runButton) runButton.disabled = staticDashboardMode || !selectedNetworkId;
 }
@@ -1030,10 +1026,18 @@ const aoiStatus = document.querySelector<HTMLOutputElement>("#aoi-status");
 const locationSearchInput = document.querySelector<HTMLInputElement>("#location-search");
 const locationSearchButton = document.querySelector<HTMLButtonElement>("#search-location");
 const locationSuggestions = document.querySelector<HTMLElement>("#location-suggestions");
-let locationSearchResults: LocationSearchResult[] = [];
+
+type LocationSuggestionItem =
+  | { provider: "local-api"; result: LocationSearchResult }
+  | { provider: "mapbox"; suggestion: MapboxLocationSuggestion };
+
+let locationSearchResults: LocationSuggestionItem[] = [];
 let activeLocationSuggestionIndex = -1;
 let locationSearchDebounceId: number | undefined;
 let locationSearchRequestId = 0;
+const mapboxLocationSearchSession = globalThis.crypto?.randomUUID
+  ? globalThis.crypto.randomUUID()
+  : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 function setAoiInputs(
   bbox: BoundingBox,
@@ -1093,6 +1097,25 @@ function locationNameFromSearch(result: LocationSearchResult): string {
   return (locationPrimaryLabel(result) || "searched-aoi").slice(0, 80);
 }
 
+function locationSuggestionPrimary(item: LocationSuggestionItem): string {
+  return item.provider === "local-api"
+    ? locationPrimaryLabel(item.result)
+    : item.suggestion.name;
+}
+
+function locationSuggestionSecondary(item: LocationSuggestionItem): string {
+  if (item.provider === "local-api") return locationSecondaryLabel(item.result);
+  return item.suggestion.fullAddress ??
+    item.suggestion.placeFormatted ??
+    item.suggestion.featureType ??
+    "Mapbox location";
+}
+
+function locationSuggestionTitle(item: LocationSuggestionItem): string {
+  if (item.provider === "local-api") return item.result.displayName;
+  return [item.suggestion.name, item.suggestion.placeFormatted].filter(Boolean).join(", ");
+}
+
 function applyLocationSearchResult(result: LocationSearchResult): void {
   stopOrbit();
   selectedNetwork = undefined;
@@ -1150,16 +1173,41 @@ function setActiveLocationSuggestion(index: number): void {
   if (index < 0) locationSearchInput?.removeAttribute("aria-activedescendant");
 }
 
-function chooseLocationSearchResult(index: number): void {
-  const result = locationSearchResults[index];
-  if (!result) return;
-  if (locationSearchInput) locationSearchInput.value = locationPrimaryLabel(result);
+async function chooseLocationSearchResult(index: number): Promise<void> {
+  const item = locationSearchResults[index];
+  if (!item) return;
+  if (locationSearchInput) locationSearchInput.value = locationSuggestionPrimary(item);
   hideLocationSuggestions();
-  applyLocationSearchResult(result);
+  if (item.provider === "local-api") {
+    applyLocationSearchResult(item.result);
+    return;
+  }
+
+  const token = getMapboxToken();
+  if (!token) {
+    if (aoiStatus) aoiStatus.value = "Mapbox token is missing, so public autocomplete cannot retrieve this location.";
+    return;
+  }
+  if (aoiStatus) aoiStatus.value = `Opening ${item.suggestion.name}...`;
+  try {
+    const result = await retrieveMapboxLocationSuggestion(
+      item.suggestion,
+      token,
+      mapboxLocationSearchSession,
+    );
+    applyLocationSearchResult(result);
+    if (staticDashboardMode && aoiStatus) {
+      aoiStatus.value = "Location selected. To build a SUMO network, open the localhost dashboard.";
+    }
+  } catch (error) {
+    if (aoiStatus) {
+      aoiStatus.value = error instanceof Error ? error.message : "Location retrieve failed";
+    }
+  }
 }
 
 function showLocationSuggestions(
-  results: LocationSearchResult[],
+  results: LocationSuggestionItem[],
   emptyMessage = "No matching location found.",
 ): void {
   if (!locationSuggestions) return;
@@ -1182,21 +1230,22 @@ function showLocationSuggestions(
       option.className = "location-suggestion";
       option.setAttribute("role", "option");
       option.setAttribute("aria-selected", "false");
-      option.title = result.displayName;
-      option.disabled = staticDashboardMode;
+      option.title = locationSuggestionTitle(result);
 
       const primary = document.createElement("span");
       primary.className = "location-suggestion-primary";
-      primary.textContent = locationPrimaryLabel(result);
+      primary.textContent = locationSuggestionPrimary(result);
       option.append(primary);
 
       const secondary = document.createElement("span");
       secondary.className = "location-suggestion-secondary";
-      secondary.textContent = locationSecondaryLabel(result);
+      secondary.textContent = locationSuggestionSecondary(result);
       option.append(secondary);
 
       option.addEventListener("mousedown", (event) => event.preventDefault());
-      option.addEventListener("click", () => chooseLocationSearchResult(index));
+      option.addEventListener("click", () => {
+        void chooseLocationSearchResult(index);
+      });
       return option;
     }),
   );
@@ -1209,13 +1258,35 @@ async function fetchLocationSuggestions(query: string, showSearchingMessage = fa
   const requestId = ++locationSearchRequestId;
   if (showSearchingMessage && aoiStatus) aoiStatus.value = `Searching ${query}...`;
   try {
-    const results = await searchLocations(query);
+    const token = getMapboxToken();
+    if (staticDashboardMode && !token) {
+      locationSearchResults = [];
+      showLocationSuggestions(
+        [],
+        "Mapbox token is missing, so public autocomplete is unavailable. Use localhost for backend search.",
+      );
+      if (aoiStatus) {
+        aoiStatus.value = "Public autocomplete requires VITE_MAPBOX_TOKEN in GitHub Actions secrets.";
+      }
+      return;
+    }
+    const results: LocationSuggestionItem[] = staticDashboardMode
+      ? (
+          await searchMapboxLocationSuggestions(
+            query,
+            token,
+            mapboxLocationSearchSession,
+          )
+        ).map((suggestion) => ({ provider: "mapbox", suggestion }))
+      : (await searchLocations(query)).map((result) => ({ provider: "local-api", result }));
     if (requestId !== locationSearchRequestId) return;
     locationSearchResults = results;
     showLocationSuggestions(results);
     if (aoiStatus) {
       aoiStatus.value = results.length > 0
-        ? "Choose one location suggestion, then build the network."
+        ? staticDashboardMode
+          ? "Choose one Mapbox location suggestion. Network build requires localhost."
+          : "Choose one location suggestion, then build the network."
         : "No location found.";
     }
   } catch (error) {
@@ -1250,7 +1321,7 @@ function queueLocationAutocompleteSearch(): void {
   clearLocationAutocompleteDelay();
   const query = locationSearchInput?.value.trim() ?? "";
   locationSearchRequestId += 1;
-  if (!shouldSearchAutocomplete(query) || staticDashboardMode) {
+  if (!shouldSearchAutocomplete(query)) {
     locationSearchResults = [];
     hideLocationSuggestions();
     return;
@@ -1286,14 +1357,14 @@ locationSearchInput?.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   event.preventDefault();
   if (!locationSuggestions?.hidden && activeLocationSuggestionIndex >= 0) {
-    chooseLocationSearchResult(activeLocationSuggestionIndex);
+    void chooseLocationSearchResult(activeLocationSuggestionIndex);
     return;
   }
   void runLocationSearch();
 });
 locationSearchInput?.addEventListener("focus", () => {
   const query = locationSearchInput.value.trim();
-  if (locationSearchResults.length > 0 && shouldSearchAutocomplete(query) && !staticDashboardMode) {
+  if (locationSearchResults.length > 0 && shouldSearchAutocomplete(query)) {
     showLocationSuggestions(locationSearchResults);
   }
 });
